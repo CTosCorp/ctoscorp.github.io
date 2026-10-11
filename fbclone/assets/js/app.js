@@ -1613,8 +1613,7 @@ async function profileHTML(uidv) {
     <div class="profile-row">
       <div class="pfp-wrap">
         ${pav(u, 120)}
-        ${mine ? `<button class="pfp-cam" onclick="document.getElementById('avatarFile').click()" title="Edit profile picture">📷</button>
-        <input type="file" id="avatarFile" accept="image/*" style="display:none" onchange="doChangeAvatar(this)">` : ''}
+        ${mine ? `<button class="pfp-cam" onclick="openAvatarMenu()" title="Edit profile picture">📷</button>` : ''}
       </div>
       <div class="profile-info"><h2>${esc(u.name || (mine ? ME.name : "") || "User")}</h2>
         ${u.thought
@@ -1716,13 +1715,30 @@ async function doChangeCover(input) {
     renderView(); toast('Cover photo updated!');
   } catch (e) { err(e); }
 }
+function openAvatarMenu() {
+  const has = !!(ME.avatar_url);
+  openModal(`<h3>Profile picture</h3>
+    <div class="modal-actions" style="flex-direction:column;align-items:stretch;gap:8px">
+      <button class="btn-primary" onclick="document.getElementById('avatarFile').click()">\u{1F4F7} Upload photo</button>
+      ${has ? `<button class="btn-ghost" onclick="removeAvatar()">\u{1F5D1}\uFE0F Remove photo</button>` : ''}
+      <button class="btn-ghost" onclick="closeModal()">Cancel</button>
+    </div>
+    <input type="file" id="avatarFile" accept="image/*" style="display:none" onchange="doChangeAvatar(this)">`);
+}
+async function removeAvatar() {
+  if (!await confirmDialog('Remove your profile picture?')) return;
+  try {
+    await updateProfile({ avatar_url: null });
+    closeModal(); renderApp(); toast('Profile picture removed.');
+  } catch (e) { err(e); }
+}
 async function doChangeAvatar(input) {
   const f = input.files[0]; if (!f) return;
   toast('Uploading profile picture...');
   try {
     const url = await uploadToMedia(f, 'avatar');
     await updateProfile({ avatar_url: url });
-    renderApp(); toast('Profile picture updated!');
+    closeModal(); renderApp(); toast('Profile picture updated!');
   } catch (e) { err(e); }
 }
 function editThought() {
