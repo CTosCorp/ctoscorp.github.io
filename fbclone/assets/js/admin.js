@@ -133,10 +133,7 @@ async function renderTab(soft) {
     else if (TAB === 'posts') c.innerHTML = await postsHTML();
     else if (TAB === 'reports') c.innerHTML = await reportsHTML();
     else if (TAB === 'settings') c.innerHTML = await settingsHTML();
-    if (TAB === 'dashboard') {
-      try { drawChart(await qTimeoutTop(adminPostsPerDay(), 15000)); }
-      catch (e) { console.error('chart failed:', e); }
-    }
+
   } catch (e) {
     console.error(e);
     if (!soft) {
@@ -149,30 +146,39 @@ async function renderTab(soft) {
 
 /* ---------------- Dashboard ---------------- */
 async function dashHTML() {
-  let s = { users: 0, posts: 0, comments: 0, likes: 0, openReports: 0 };
-  try { s = await qTimeoutTop(adminStats(), 15000); }
-  catch (e) { console.error('adminStats failed:', e); }
-  const stats = [
-    ['👥', s.users, 'Total users'], ['📰', s.posts, 'Total posts'],
-    ['💬', s.comments, 'Comments'], ['👍', s.likes, 'Likes'],
-    ['🚩', s.openReports, 'Open reports'],
-  ];
-  let recent = [];
-  try { recent = (await qTimeoutTop(adminGetPosts(), 15000)).slice(0, 5); }
-  catch (e) { console.error('adminGetPosts failed:', e); }
+  // Render skeleton instantly; data fills in async (never blocks on slow queries)
+  setTimeout(fillDashboard, 50);
+  const icons = ['\u{1F465}', '\u{1F4F0}', '\u{1F4AC}', '\u{1F44D}', '\u{1F6A9}'];
+  const labels = ['Total users', 'Total posts', 'Comments', 'Likes', 'Open reports'];
   return `
-  <div class="stat-grid">${stats.map(([ico, n, label]) =>
-    `<div class="stat"><div class="stat-ico">${ico}</div><div class="stat-n">${n}</div><div class="stat-l">${label}</div></div>`).join('')}
+  <div class="stat-grid">${icons.map((ico, i) =>
+    `<div class="stat"><div class="stat-ico">${ico}</div><div class="stat-n" id="dstat${i}">\u2026</div><div class="stat-l">${labels[i]}</div></div>`).join('')}
   </div>
   <div class="a-row">
-    <div class="a-card grow"><h3>Posts — last 7 days <span class="live-tag">● LIVE</span></h3><canvas id="chart" width="520" height="220"></canvas></div>
-    <div class="a-card grow"><h3>Recent posts</h3>
-      ${recent.map(p => `
-        <div class="recent-row">${pav(p.author, 32)}
-          <div><b>${esc(p.author.name)}</b><div class="muted">${esc((p.text || '(photo post)').slice(0, 70))} · ${timeAgo(p.created_at)}</div></div>
-        </div>`).join('') || '<div class="muted">No posts yet.</div>'}
-    </div>
+    <div class="a-card grow"><h3>Posts \u2014 last 7 days <span class="live-tag">\u25CF LIVE</span></h3><canvas id="chart" width="520" height="220"></canvas><div class="muted" id="dchartmsg" style="font-size:12px"></div></div>
+    <div class="a-card grow"><h3>Recent posts</h3><div id="drecent"><div class="muted">Loading...</div></div></div>
   </div>`;
+}
+async function fillDashboard() {
+  try {
+    const s = await qTimeoutTop(adminStats(), 15000);
+    [s.users, s.posts, s.comments, s.likes, s.openReports].forEach((v, i) => {
+      const el = $('#dstat' + i); if (el) el.textContent = (v ?? 0);
+    });
+  } catch (e) { console.error('stats failed:', e); }
+  try { drawChart(await qTimeoutTop(adminPostsPerDay(), 15000)); }
+  catch (e) { const m = $('#dchartmsg'); if (m) m.textContent = 'Chart unavailable.'; console.error('chart failed:', e); }
+  try {
+    const recent = (await qTimeoutTop(adminGetPosts(), 15000)).slice(0, 5);
+    const box = $('#drecent');
+    if (box) box.innerHTML = recent.map(p => `
+      <div class="recent-row">${pav(p.author, 32)}
+        <div><b>${esc(p.author.name)}</b><div class="muted">${esc((p.text || '(photo post)').slice(0, 70))} \u00B7 ${timeAgo(p.created_at)}</div></div>
+      </div>`).join('') || '<div class="muted">No posts yet.</div>';
+  } catch (e) {
+    const box = $('#drecent'); if (box) box.innerHTML = '<div class="muted">Failed to load posts.</div>';
+    console.error('recent failed:', e);
+  }
 }
 function drawChart(days) {
   const cv = $('#chart'); if (!cv || !days) return;
