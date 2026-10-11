@@ -379,3 +379,34 @@ div.thought-bubble[onclick] { cursor: pointer; }
   60% { transform: scale(1.25) translateY(-4px); opacity: 1; }
   to { transform: scale(1) translateY(0); opacity: 1; }
 }
+
+/* ---------- comments: threads, reactions, sort, translate, emoji ---------- */
+.comment { position: relative; }
+.c-main { flex: 1; min-width: 0; }
+.c-actions { display: flex; gap: 12px; align-items: center; margin: 2px 0 0 12px; font-size: 13px; }
+.c-actions button { background: none; border: none; color: var(--muted); font-size: 13px; font-weight: 600; padding: 2px 0; user-select: none; -webkit-user-select: none; touch-action: pan-y; }
+.c-actions button.c-like.on { font-weight: 700; }
+.c-text { margin-top: 2px; word-wrap: break-word; }
+.c-tr { background: none; border: none; color: var(--muted); font-size: 12px; padding: 4px 0 0; text-decoration: underline; }
+.c-tr-out { font-size: 13px; color: var(--muted); margin-top: 4px; border-top: 1px dashed var(--border); padding-top: 4px; }
+.c-badge-wrap { align-self: flex-end; margin-bottom: 18px; }
+.c-badge { display: inline-flex; align-items: center; background: var(--card); border-radius: 999px; padding: 2px 6px 2px 2px; box-shadow: 0 1px 4px rgba(0,0,0,.18); font-size: 12px; color: var(--muted); }
+.c-badge i { font-style: normal; margin-left: 3px; }
+.comment.reply { margin: 6px 0 6px 12px; }
+.comment.reply .comment-body { font-size: 13px; }
+.replies { margin-top: 4px; }
+.rbox { margin-top: 6px; }
+.reply-box { display: flex; gap: 8px; align-items: center; }
+.reply-box input { flex: 1; border: none; background: var(--input); border-radius: 999px; padding: 8px 14px; font-size: 13px; color: var(--text); outline: none; }
+.c-sortrow { margin: 2px 0 6px; }
+.c-sort { background: none; border: none; color: var(--muted); font-size: 13px; font-weight: 600; padding: 2px 0; }
+.add-comment { position: relative; }
+.c-emoji-btn { background: none; border: none; font-size: 20px; padding: 4px 6px; }
+.emoji-picker {
+  position: fixed; z-index: 600; width: 264px; max-height: 220px; overflow-y: auto;
+  background: var(--card); border-radius: 12px; padding: 8px;
+  box-shadow: 0 10px 34px rgba(0,0,0,.28); border: 1px solid var(--border);
+  display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px;
+}
+.emoji-picker button { background: none; border: none; font-size: 24px; padding: 4px; border-radius: 8px; }
+.emoji-picker button:hover { background: var(--hover); }

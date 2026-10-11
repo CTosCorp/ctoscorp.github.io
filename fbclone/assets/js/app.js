@@ -300,6 +300,7 @@ function setupRealtime() {
   rtChannels.push(onTable('posts', reload));
   rtChannels.push(onTable('comments', reload));
   rtChannels.push(onTable('reactions', reload));
+  rtChannels.push(onTable('comment_reactions', reload));
   rtChannels.push(onTable('stories', debounce(() => { if (S.view === 'home') refreshStories(); }, 600)));
   rtChannels.push(onTable('profiles', debounce(() => loadRightBar(), 800)));
   rtChannels.push(sb.channel('rt-msg-badge')
@@ -508,7 +509,6 @@ function postsHTML(list) {
 }
 function postHTML(p) {
   const a = p.author || { name: '?' };
-  const comments = p.comments || [];
   return `<article class="post card" id="post_${p.id}">
     <div class="post-head">
       <span onclick="openProfile('${a.id || ''}')" class="clickable">${pav(a, 40)}</span>
@@ -533,13 +533,11 @@ function postHTML(p) {
       <button onclick="sharePostUI('${p.id}')">${icon('share', 20)}<span>Share</span></button>
     </div>
     <hr>
-    <div class="comments" id="comments_${p.id}">
-      ${comments.slice(-3).map(commentHTML).join('')}
-      ${comments.length > 3 ? `<button class="more-c" onclick="showAllComments('${p.id}')">View all ${comments.length} comments</button>` : ''}
-    </div>
+    <div class="comments" id="comments_${p.id}">${commentsSectionHTML(p)}</div>
     <div class="add-comment">
       ${pav(ME, 32)}
       <input id="cin_${p.id}" placeholder="Write a comment..." onkeydown="if(event.key==='Enter')addCommentUI('${p.id}')">
+      <button class="c-emoji-btn" onclick="openEmojiPicker('cin_${p.id}', this)" title="Emoji">\u{1F60A}</button>
     </div>
   </article>`;
 }
@@ -553,46 +551,243 @@ function sharedHTML(s) {
     ${s.image_url ? `<img class="post-img" loading="lazy" src="${esc(s.image_url)}" onerror="this.style.display='none'">` : ''}
   </div>`;
 }
-function commentHTML(c) {
-  return `<div class="comment">
-    ${pav(c.author, 32)}
-    <div class="comment-body"><b>${esc(c.author.name)}</b><div>${esc(c.text)}</div></div>
+/* ---------------- comments: threads, replies, sort, translate ---------------- */
+function commentThreads(comments) {
+  const map = {}, tops = [];
+  (comments || []).forEach(c => { c.replies = []; map[c.id] = c; });
+  (comments || []).forEach(c => {
+    if (c.parent_id && map[c.parent_id]) {
+      let anc = map[c.parent_id];
+      while (anc.parent_id && map[anc.parent_id]) anc = map[anc.parent_id];
+      if (anc.id !== c.id) anc.replies.push(c); else tops.push(c);
+    } else tops.push(c);
+  });
+  return tops;
+}
+function sortComments(tops, mode) {
+  const arr = [...tops];
+  if (mode === 'new') arr.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  else if (mode === 'old') arr.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  else arr.sort((a, b) => ((b.reactionTotal || 0) * 2 + (b.replies || []).length * 3) - ((a.reactionTotal || 0) * 2 + (a.replies || []).length * 3));
+  return arr;
+}
+function commentsSectionHTML(p) {
+  const tops = commentThreads(p.comments);
+  const total = (p.comments || []).length;
+  const sort = S._csort[p.id] || 'top';
+  let h = '';
+  if (tops.length > 1) {
+    h += `<div class="c-sortrow"><select class="c-sort" onchange="setCsort('${p.id}',this.value)" aria-label="Sort comments">
+      <option value="top"${sort === 'top' ? ' selected' : ''}>Most relevant</option>
+      <option value="new"${sort === 'new' ? ' selected' : ''}>Newest</option>
+      <option value="old"${sort === 'old' ? ' selected' : ''}>Oldest</option>
+    </select></div>`;
+  }
+  const sorted = sortComments(tops, sort);
+  const showAll = S._cshow[p.id];
+  const list = showAll ? sorted : sorted.slice(0, 3);
+  h += list.map(c => commentHTML(c, p.id, false)).join('');
+  if (!showAll && sorted.length > 3)
+    h += `<button class="more-c" onclick="showAllComments('${p.id}')">View all ${total} comments</button>`;
+  return h;
+}
+function cRxBtnHTML(c) {
+  const r = c.myReaction ? RX[c.myReaction] : null;
+  return `<button data-rxbtn class="c-like${r ? ' on' : ''}"
+    onpointerdown="rxDown(event,'c','${c.id}')" onpointerup="rxUp()" onpointerleave="rxUp()" onpointercancel="rxUp()"
+    onclick="rxTap(event,'c','${c.id}')"
+    style="${r ? `color:${r.c};font-weight:700` : ''}">${r ? r.label : 'Like'}</button>`;
+}
+function cRxBadgeHTML(c) {
+  if (!c.reactionTotal) return '';
+  const t = c.reactionCounts || {};
+  const top = Object.keys(t).filter(k => t[k] > 0).sort((a, b) => t[b] - t[a]).slice(0, 3);
+  return `<span class="c-badge"><span class="rx-top">${top.map(k => `<span>${RX[k].e}</span>`).join('')}</span>${c.reactionTotal > 1 ? `<i>${fmtCount(c.reactionTotal)}</i>` : ''}</span>`;
+}
+function commentHTML(c, pid, isReply) {
+  const rc = (c.replies || []).length;
+  const expKey = pid + '_' + c.id;
+  const expanded = !!S._cexp[expKey];
+  return `<div class="comment${isReply ? ' reply' : ''}" data-ccard="${c.id}">
+    ${pav(c.author, isReply ? 28 : 32)}
+    <div class="c-main">
+      <div class="comment-body">
+        <b>${esc(c.author.name)}</b>
+        <div class="c-text">${esc(c.text)}</div>
+        ${hasBangla(c.text) ? `<button class="c-tr" onclick="translateUI('${c.id}', this)">See translation</button><div class="c-tr-out" id="tro_${c.id}" hidden></div>` : ''}
+      </div>
+      <div class="c-actions">
+        ${cRxBtnHTML(c)}
+        ${isReply ? '' : `<button onclick="replyBoxUI('${pid}','${c.id}')">Reply</button>`}
+        <span class="muted">${timeAgo(c.created_at)}</span>
+      </div>
+      ${!isReply && rc ? (expanded
+        ? `<div class="replies">${c.replies.map(rp => commentHTML(rp, pid, true)).join('')}</div>`
+        : `<button class="more-c" onclick="toggleReplies('${pid}','${c.id}')">View ${rc} repl${rc > 1 ? 'ies' : 'y'}</button>`) : ''}
+      <div class="rbox" id="rbox_${c.id}" hidden></div>
+    </div>
+    <div class="c-badge-wrap">${cRxBadgeHTML(c)}</div>
   </div>`;
+}
+function refreshComments(pid) {
+  const p = POST_CACHE[pid]; if (!p) return;
+  const box = $('#comments_' + pid);
+  if (box) box.innerHTML = commentsSectionHTML(p);
+  paintRx('p', pid);
+}
+function showAllComments(pid) { S._cshow[pid] = true; refreshComments(pid); }
+function toggleReplies(pid, cid) {
+  const k = pid + '_' + cid;
+  S._cexp[k] = !S._cexp[k];
+  refreshComments(pid);
+}
+function setCsort(pid, v) { S._csort[pid] = v; S._cshow[pid] = false; refreshComments(pid); }
+function replyBoxUI(pid, cid) {
+  const box = $('#rbox_' + cid); if (!box) return;
+  if (!box.hidden) { box.hidden = true; box.innerHTML = ''; return; }
+  const c = findComment(cid);
+  const nm = esc(((c && c.author && c.author.name) || 'them').split(' ')[0]);
+  box.innerHTML = `<div class="add-comment reply-box">
+      ${pav(ME, 28)}
+      <input id="rin_${cid}" placeholder="Reply to ${nm}..." onkeydown="if(event.key==='Enter')addReplyUI('${pid}','${cid}')">
+      <button class="c-emoji-btn" onclick="openEmojiPicker('rin_${cid}', this)" title="Emoji">\u{1F60A}</button>
+    </div>`;
+  box.hidden = false;
+  setTimeout(() => { const i = $('#rin_' + cid); if (i) i.focus(); }, 60);
+}
+async function addReplyUI(pid, cid) {
+  const inp = $('#rin_' + cid); if (!inp) return;
+  const text = inp.value.trim(); if (!text) return;
+  const p = POST_CACHE[pid]; if (!p) return;
+  inp.disabled = true;
+  try {
+    const c = await addComment(p, text, cid);
+    c.author = { id: ME.id, name: ME.name, avatar_url: ME.avatar_url };
+    c.reactionCounts = {}; c.reactionTotal = 0; c.myReaction = null; c.replies = [];
+    p.comments.push(c);
+    S._cexp[pid + '_' + cid] = true;
+    refreshComments(pid);
+  } catch (e) { err(e); }
+  inp.disabled = false;
+}
+async function addCommentUI(pid) {
+  const inp = $('#cin_' + pid); const text = inp.value.trim(); if (!text) return;
+  const p = POST_CACHE[pid]; if (!p) return;
+  inp.disabled = true;
+  try {
+    const c = await addComment(p, text);
+    c.author = { id: ME.id, name: ME.name, avatar_url: ME.avatar_url };
+    c.reactionCounts = {}; c.reactionTotal = 0; c.myReaction = null; c.replies = [];
+    p.comments.push(c);
+    inp.value = '';
+    refreshComments(pid);
+  } catch (e) { err(e); }
+  inp.disabled = false;
+}
+/* ----- translation (free API, Bangla -> English) ----- */
+const _trCache = {};
+function hasBangla(t) { return /[\u0980-\u09FF]/.test(t || ''); }
+async function translateUI(cid, btn) {
+  const out = $('#tro_' + cid);
+  const c = findComment(cid);
+  if (!out || !c) return;
+  if (!out.hidden) { out.hidden = true; btn.textContent = 'See translation'; return; }
+  if (_trCache[cid]) { out.textContent = _trCache[cid]; out.hidden = false; btn.textContent = 'See original'; return; }
+  btn.textContent = 'Translating...';
+  try {
+    const url = 'https://api.mymemory.translated.net/get?q=' + encodeURIComponent(c.text) + '&langpair=bn|en';
+    const r = await fetch(url);
+    const j = await r.json();
+    const t = (j.responseData && j.responseData.translatedText) || '';
+    if (!t || /MYMEMORY WARNING|QUERY LENGTH LIMIT|INVALID EMAIL/i.test(t)) throw new Error('bad');
+    _trCache[cid] = t;
+    out.textContent = t; out.hidden = false; btn.textContent = 'See original';
+  } catch (e) {
+    btn.textContent = 'See translation';
+    toast('Translation unavailable right now.');
+  }
+}
+/* ----- emoji picker (no API needed) ----- */
+const EMOJIS = ['\u{1F600}','\u{1F601}','\u{1F602}','\u{1F923}','\u{1F60A}','\u{1F60D}','\u{1F60E}','\u{1F62D}','\u{1F621}','\u{1F44D}','\u{1F44E}','\u{1F64F}','\u{1F44F}','\u{1F525}','\u2764\uFE0F','\u{1F494}','\u{1F389}','\u{1F62E}','\u{1F622}','\u{1F605}','\u{1F914}','\u{1F634}','\u{1F973}','\u{1F607}','\u{1F917}','\u{1F440}','\u{1F4AF}','\u2728','\u{1F64C}','\u{1F91D}','\u{1F44B}','\u270C\uFE0F','\u{1F91E}','\u{1F4AA}','\u{1F9E0}','\u{1F339}','\u2B50','\u{1F382}','\u{1F355}','\u26BD'];
+let _emojiFor = null;
+function openEmojiPicker(inputId, anchor) {
+  closeEmojiPicker();
+  _emojiFor = inputId;
+  const r = anchor.getBoundingClientRect();
+  const d = document.createElement('div');
+  d.id = 'emojiPicker'; d.className = 'emoji-picker';
+  d.innerHTML = EMOJIS.map(e => `<button onclick="pickEmoji('${e}')">${e}</button>`).join('');
+  document.body.appendChild(d);
+  const w = 264;
+  d.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left - w + 40)) + 'px';
+  d.style.top = Math.max(8, r.top - d.offsetHeight - 10) + 'px';
+}
+function closeEmojiPicker() { const d = $('#emojiPicker'); if (d) d.remove(); _emojiFor = null; }
+function pickEmoji(e) {
+  const inp = _emojiFor && document.getElementById(_emojiFor);
+  if (inp) {
+    const s = inp.selectionStart != null ? inp.selectionStart : inp.value.length;
+    const en = inp.selectionEnd != null ? inp.selectionEnd : s;
+    inp.value = inp.value.slice(0, s) + e + inp.value.slice(en);
+    inp.focus();
+    try { inp.setSelectionRange(s + e.length, s + e.length); } catch (_) {}
+  }
+  closeEmojiPicker();
 }
 
 /* post cache for actions */
 let POST_CACHE = {};
 function cachePosts(list) { list.forEach(p => { POST_CACHE[p.id] = p; }); }
 
-/* ----- reaction picker (long-press) ----- */
+/* ----- reaction picker (long-press), posts + comments ----- */
 let rxTimer = null, rxPickerFor = null;
-function rxDown(ev, pid) {
-  if (rxPickerFor === pid) { closeRxPicker(); S._rxAte = pid; return; }
+function rxTarget(kind, id) {
+  if (kind === 'p') return POST_CACHE[id] || null;
+  return findComment(id);
+}
+function findComment(cid) {
+  for (const pid in POST_CACHE) {
+    const cs = (POST_CACHE[pid].comments || []);
+    for (const c of cs) if (c.id === cid) return c;
+  }
+  return null;
+}
+async function rxDoReact(obj, kind, type) {
+  if (kind === 'p') await reactToPost(obj, type); else await reactToComment(obj, type);
+}
+async function rxDoUnreact(obj, kind) {
+  if (kind === 'p') await unreactToPost(obj); else await unreactToComment(obj);
+}
+function rxDown(ev, kind, id) {
+  const key = kind + ':' + id;
+  if (rxPickerFor === key) { closeRxPicker(); S._rxAte = key; return; }
   closeRxPicker();
   const el = ev.currentTarget;
-  rxTimer = setTimeout(() => { rxTimer = null; openRxPicker(pid, el); }, 450);
+  rxTimer = setTimeout(() => { rxTimer = null; openRxPicker(kind, id, el); }, 450);
 }
 function rxUp() { if (rxTimer) { clearTimeout(rxTimer); rxTimer = null; } }
-async function rxTap(ev, pid) {
+async function rxTap(ev, kind, id) {
   ev.stopPropagation(); rxUp();
-  if (S._rxAte === pid) { S._rxAte = null; return; }
-  if (S._rxLong === pid) { S._rxLong = null; return; }
-  const p = POST_CACHE[pid]; if (!p) return;
+  const key = kind + ':' + id;
+  if (S._rxAte === key) { S._rxAte = null; return; }
+  if (S._rxLong === key) { S._rxLong = null; return; }
+  const o = rxTarget(kind, id); if (!o) return;
   try {
-    if (p.myReaction) { applyLocalRx(p, null); paintRx(pid); await unreactToPost(p); }
-    else { applyLocalRx(p, 'like'); paintRx(pid); await reactToPost(p, 'like'); }
+    if (o.myReaction) { applyLocalRx(o, null); paintRx(kind, id); await rxDoUnreact(o, kind); }
+    else { applyLocalRx(o, 'like'); paintRx(kind, id); await rxDoReact(o, kind, 'like'); }
   } catch (e) { err(e); renderView(); }
 }
-function openRxPicker(pid, anchor) {
+function openRxPicker(kind, id, anchor) {
   closeRxPicker();
-  S._rxLong = pid; rxPickerFor = pid;
+  const key = kind + ':' + id;
+  S._rxLong = key; rxPickerFor = key;
   const r = anchor.getBoundingClientRect();
   const d = document.createElement('div');
   d.id = 'rxPicker'; d.className = 'rx-picker';
   d.innerHTML = Object.keys(RX).map((t, i) =>
     `<button class="rx-opt" style="animation-delay:${i * 45}ms" title="${RX[t].label}" aria-label="${RX[t].label}"
       onpointerdown="event.stopPropagation();event.preventDefault()"
-      onclick="pickRx(event,'${pid}','${t}')"><span>${RX[t].e}</span></button>`).join('');
+      onclick="pickRx(event,'${kind}','${id}','${t}')"><span>${RX[t].e}</span></button>`).join('');
   document.body.appendChild(d);
   const w = d.offsetWidth, h = d.offsetHeight;
   d.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left + r.width / 2 - w / 2)) + 'px';
@@ -602,19 +797,21 @@ function closeRxPicker() {
   const d = $('#rxPicker'); if (d) d.remove();
   rxPickerFor = null; S._rxLong = null;
 }
-async function pickRx(ev, pid, type) {
+async function pickRx(ev, kind, id, type) {
   ev.stopPropagation(); ev.preventDefault();
-  const p = POST_CACHE[pid];
+  const o = rxTarget(kind, id);
   closeRxPicker(); S._rxLong = null; S._rxAte = null;
-  if (!p) return;
+  if (!o) return;
   try {
-    applyLocalRx(p, type); paintRx(pid);
-    await reactToPost(p, type);
+    applyLocalRx(o, type); paintRx(kind, id);
+    await rxDoReact(o, kind, type);
   } catch (e) { err(e); renderView(); }
 }
 document.addEventListener('pointerdown', (e) => {
   const d = $('#rxPicker');
   if (d && !d.contains(e.target) && !e.target.closest('[data-rxbtn]')) closeRxPicker();
+  const em = $('#emojiPicker');
+  if (em && !em.contains(e.target) && !e.target.closest('.c-emoji-btn')) closeEmojiPicker();
 }, true);
 window.addEventListener('scroll', () => { if (rxPickerFor) closeRxPicker(); }, { passive: true, capture: true });
 function applyLocalRx(p, nt) {
@@ -649,12 +846,13 @@ function rxBtnHTML(p, compact) {
     ? `<span class="rx-e">${r.e}</span>${compact ? '' : `<span style="color:${r.c};font-weight:700">${r.label}</span>`}`
     : `${icon('like', 20)}${compact ? '' : '<span>Like</span>'}`;
   return `<button data-rxbtn class="${compact ? 'rx-compact ' : ''}${r ? 'rx-' + p.myReaction : ''}"
-    onpointerdown="rxDown(event,'${p.id}')" onpointerup="rxUp()" onpointerleave="rxUp()" onpointercancel="rxUp()"
-    onclick="rxTap(event,'${p.id}')">${inner}</button>`;
+    onpointerdown="rxDown(event,'p','${p.id}')" onpointerup="rxUp()" onpointerleave="rxUp()" onpointercancel="rxUp()"
+    onclick="rxTap(event,'p','${p.id}')">${inner}</button>`;
 }
-function paintRx(pid) {
-  const p = POST_CACHE[pid]; if (!p) return;
-  document.querySelectorAll('#post_' + pid).forEach(card => {
+function paintRx(kind, id) {
+  if (kind === 'c') return paintCommentRx(id);
+  const p = POST_CACHE[id]; if (!p) return;
+  document.querySelectorAll('#post_' + id).forEach(card => {
     const btn = card.querySelector('[data-rxbtn]');
     if (btn) {
       const tmp = document.createElement('div');
@@ -665,36 +863,16 @@ function paintRx(pid) {
     if (cr) cr.innerHTML = rxCountsHTML(p);
   });
 }
-
-async function addCommentUI(pid) {
-  const inp = $('#cin_' + pid); const text = inp.value.trim(); if (!text) return;
-  const p = POST_CACHE[pid]; if (!p) return;
-  inp.disabled = true;
-  try {
-    const c = await addComment(p, text);
-    c.author = { name: ME.name };
-    p.comments.push(c);
-    refreshComments(pid);
-  } catch (e) { err(e); }
-  inp.disabled = false;
-}
-function refreshComments(pid) {
-  const p = POST_CACHE[pid];
-  const box = $('#comments_' + pid); if (!box || !p) return;
-  const comments = p.comments || [];
-  box.innerHTML = comments.slice(-3).map(commentHTML).join('') +
-    (comments.length > 3 ? `<button class="more-c" onclick="showAllComments('${pid}')">View all ${comments.length} comments</button>` : '');
-  const card = $('#post_' + pid);
-  if (card) {
-    const rc = card.querySelector('.right-counts');
-    if (rc) rc.textContent = `${comments.length} comments`;
-  }
+function paintCommentRx(cid) {
+  const c = findComment(cid); if (!c) return;
+  document.querySelectorAll(`[data-ccard="${cid}"]`).forEach(card => {
+    const btn = card.querySelector('[data-rxbtn]');
+    if (btn) { const tmp = document.createElement('div'); tmp.innerHTML = cRxBtnHTML(c); btn.replaceWith(tmp.firstChild); }
+    const bw = card.querySelector('.c-badge-wrap');
+    if (bw) bw.innerHTML = cRxBadgeHTML(c);
+  });
 }
 
-async function showAllComments(pid) {
-  const p = POST_CACHE[pid]; if (!p) return;
-  $('#comments_' + pid).innerHTML = (p.comments || []).map(commentHTML).join('');
-}
 function focusComment(pid) { const i = $('#cin_' + pid); if (i) i.focus(); }
 async function sharePostUI(pid) {
   const p = POST_CACHE[pid]; if (!p) return;
@@ -1069,7 +1247,7 @@ async function watchHTML() {
           <button onclick="focusComment('${p.id}')">${icon('comment', 20)}<span>${(p.comments || []).length || ''}</span></button>
           <button onclick="sharePostUI('${p.id}')">${icon('share', 20)}</button>
         </div>
-        <div class="comments" id="comments_${p.id}">${(p.comments || []).slice(-2).map(commentHTML).join('')}</div>
+        <div class="comments" id="comments_${p.id}">${commentsSectionHTML(p)}</div>
         <div class="add-comment">${pav(ME, 32)}<input id="cin_${p.id}" placeholder="Write a comment..." onkeydown="if(event.key==='Enter')addCommentUI('${p.id}')"></div>
       </div>`;
     }).join('');

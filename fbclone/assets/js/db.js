@@ -69,13 +69,19 @@ async function hydratePosts(posts) {
   const [profsR, rxR, commentsR, sharedR, sharesR] = await Promise.all([
     sb.from('profiles').select('id,name,bio,banned,avatar_url').in('id', authorIds),
     sb.from('reactions').select('post_id,user_id,type').in('post_id', ids),
-    sb.from('comments').select('id,post_id,text,created_at,author_id').in('post_id', ids).order('created_at', { ascending: true }),
+    sb.from('comments').select('id,post_id,text,created_at,author_id,parent_id').in('post_id', ids).order('created_at', { ascending: true }),
     sharedIds.length ? sb.from('posts').select('*').in('id', sharedIds) : Promise.resolve({ data: [] }),
     sb.from('posts').select('shared_from').in('shared_from', ids),
   ]);
   const profs = profsR.data || [], rxns = rxR.data || [],
         comments = commentsR.data || [], shared = sharedR.data || [],
         shareRows = sharesR.data || [];
+  let crxns = [];
+  const cids = comments.map(c => c.id);
+  if (cids.length) {
+    const { data: crx } = await sb.from('comment_reactions').select('comment_id,user_id,type').in('comment_id', cids);
+    crxns = crx || [];
+  }
   const pmap = Object.fromEntries(profs.map(p => [p.id, p]));
   const cAuthorIds = [...new Set(comments.map(c => c.author_id))];
   let cmap = {};
@@ -100,7 +106,14 @@ async function hydratePosts(posts) {
     myReaction: (() => { const r = rxns.find(r => r.post_id === p.id && ME && r.user_id === ME.id); return r ? r.type : null; })(),
     shareCount: shareRows.filter(s => s.shared_from === p.id).length,
     comments: comments.filter(c => c.post_id === p.id)
-      .map(c => ({ ...c, author: cmap[c.author_id] || { name: '?' } })),
+      .map(c => {
+        const rc = {};
+        crxns.filter(r => r.comment_id === c.id).forEach(r => { rc[r.type] = (rc[r.type] || 0) + 1; });
+        const mine = crxns.find(r => r.comment_id === c.id && ME && r.user_id === ME.id);
+        return { ...c, author: cmap[c.author_id] || { name: '?' },
+          reactionCounts: rc, reactionTotal: Object.values(rc).reduce((a, b) => a + b, 0),
+          myReaction: mine ? mine.type : null };
+      }),
     shared: p.shared_from ? (sharedMap[p.shared_from] || null) : null,
   }));
 }
@@ -136,13 +149,24 @@ async function unreactToPost(post) {
   const { error } = await sb.from('reactions').delete().eq('post_id', post.id).eq('user_id', ME.id);
   if (error) throw error;
 }
-async function addComment(post, text) {
+async function addComment(post, text, parentId) {
   const { data, error } = await sb.from('comments')
-    .insert({ post_id: post.id, author_id: ME.id, text }).select().single();
+    .insert({ post_id: post.id, author_id: ME.id, text, parent_id: parentId || null }).select().single();
   if (error) throw error;
   if (post.author_id !== ME.id)
     await notify(post.author_id, 'comment', post.id, `${ME.name} commented: "${text.slice(0, 60)}"`);
   return data;
+}
+async function reactToComment(comment, type) {
+  const isNew = !comment.myReaction;
+  const { error } = await sb.from('comment_reactions').upsert(
+    { comment_id: comment.id, user_id: ME.id, type },
+    { onConflict: 'comment_id,user_id' });
+  if (error) throw error;
+}
+async function unreactToComment(comment) {
+  const { error } = await sb.from('comment_reactions').delete().eq('comment_id', comment.id).eq('user_id', ME.id);
+  if (error) throw error;
 }
 
 /* ---------------- Social ---------------- */
