@@ -35,5 +35,11 @@ on conflict (post_id, user_id) do nothing;
 alter publication supabase_realtime add table reactions;
 
 -- retire the old likes table (data already migrated)
-alter publication supabase_realtime drop table if exists likes;
+-- NOTE: ALTER PUBLICATION ... DROP TABLE has no IF EXISTS; use a DO block
+do $$
+begin
+  if exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'likes') then
+    alter publication supabase_realtime drop table likes;
+  end if;
+end $$;
 drop table if exists likes;
