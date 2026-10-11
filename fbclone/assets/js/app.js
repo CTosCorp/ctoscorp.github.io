@@ -256,12 +256,7 @@ async function loadFeedsChrono() {
   } catch (e) { err(e); }
 }
 function homeSkeleton() {
-  return storiesSkeleton() + composerHTML() + `<div id="posts"><div class="card empty">Loading posts...</div></div>`;
-}
-function storiesSkeleton() {
-  return `<div class="stories"><div class="story create" style="opacity:.5">
-    <div class="story-top">${pav(ME, 64)}</div>
-    <div class="story-plus">+</div><div class="story-label">Create story</div></div></div>`;
+  return composerHTML() + `<div id="posts"><div class="card empty">Loading posts...</div></div>`;
 }
 async function loadHomeFeed() {
   try {
