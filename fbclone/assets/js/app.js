@@ -279,6 +279,7 @@ function homeSkeleton() {
 async function loadHomeFeed() {
   try {
     const posts = await getFeed();
+    cachePosts(posts);
     const el = $('#posts');
     if (el) el.innerHTML = postsHTML(posts.filter(p => !p.author.banned));
     const st = $('#storiesRow');
@@ -603,7 +604,7 @@ function openRxPicker(pid, anchor) {
 }
 function closeRxPicker() {
   const d = $('#rxPicker'); if (d) d.remove();
-  rxPickerFor = null;
+  rxPickerFor = null; S._rxLong = null;
 }
 async function pickRx(ev, pid, type) {
   ev.stopPropagation(); ev.preventDefault();
