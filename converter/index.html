@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Vector Converter</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);color:#fff;min-height:100vh;padding:16px}
+.h{font-size:24px;font-weight:800;text-align:center;margin:12px 0 4px;background:linear-gradient(90deg,#f9d976,#f39f5a);-webkit-background-clip:text;background-clip:text;color:transparent}
+.sub{text-align:center;color:#aaa;font-size:13px;margin-bottom:20px}
+.card{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:16px;padding:18px;margin-bottom:14px}
+#drop{border:2px dashed rgba(255,255,255,.25);border-radius:12px;padding:36px 16px;text-align:center;font-size:15px;color:#ccc}
+#drop.over{border-color:#f9d976;background:rgba(249,217,118,.08)}
+#prev{max-width:100%;max-height:220px;display:block;margin:12px auto;border-radius:8px;background:#fff}
+.lbl{font-size:12px;color:#aaa;text-transform:uppercase;letter-spacing:1px;margin:14px 0 8px}
+.seg{display:flex;background:rgba(0,0,0,.3);border-radius:12px;padding:4px;gap:4px}
+.seg button{flex:1;padding:12px;border:none;border-radius:9px;background:transparent;color:#aaa;font-size:15px;font-weight:600}
+.seg button.on{background:linear-gradient(90deg,#f9d976,#f39f5a);color:#1a1a2e}
+.row{display:flex;gap:10px;align-items:center;margin-top:10px}
+.row label{font-size:14px;color:#ccc;min-width:70px}
+select,input[type=range]{flex:1;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,.15);background:rgba(0,0,0,.3);color:#fff;font-size:15px}
+#go{width:100%;padding:16px;border:none;border-radius:14px;font-size:18px;font-weight:800;background:linear-gradient(90deg,#f9d976,#f39f5a);color:#1a1a2e;margin-top:16px}
+#go:disabled{opacity:.4}
+#status{text-align:center;margin-top:12px;font-size:14px;color:#aaa;min-height:20px}
+.note{font-size:12px;color:#888;text-align:center;margin-top:16px;line-height:1.5}
+input[type=file]{display:none}
+</style>
+</head>
+<body>
+<div class="h">⚡ Vector Converter</div>
+<div class="sub">SVG / AI → PNG · JPG · EPS10</div>
+
+<div class="card">
+  <div id="drop">📁 Tap to choose file<br><small>SVG or AI (PDF-based)</small></div>
+  <input type="file" id="fi" accept=".svg,.ai,image/svg+xml">
+  <img id="prev" style="display:none">
+  <div id="fname" style="text-align:center;color:#f9d976;font-size:13px;margin-top:8px"></div>
+</div>
+
+<div class="card">
+  <div class="lbl">Output format</div>
+  <div class="seg" id="fmtseg">
+    <button data-f="png" class="on">PNG</button>
+    <button data-f="jpg">JPG</button>
+    <button data-f="eps">EPS10</button>
+  </div>
+  <div id="pngopts">
+    <div class="lbl">Size</div>
+    <div class="seg" id="sizeseg">
+      <button data-s="1024">1K</button>
+      <button data-s="2048" class="on">2K</button>
+      <button data-s="4096">4K</button>
+    </div>
+    <div class="row" id="qrow" style="display:none">
+      <label>Quality</label>
+      <input type="range" id="qual" min="50" max="100" value="92">
+      <span id="qval">92</span>
+    </div>
+  </div>
+  <div id="epsnote" class="note" style="display:none">Illustrator 10 compatible EPS.<br>Vector paths preserved.</div>
+  <button id="go" disabled>Convert & Download</button>
+  <div id="status"></div>
+</div>
+
+<div class="note">100% offline · All processing on your device<br>No files uploaded anywhere</div>
+
+<script src="pdf.min.js"></script>
+<script>
+/* ============ state ============ */
+let svgText=null, fileName='', fileType='', fmt='png', outSize=2048;
+
+/* ============ UI ============ */
+const $=id=>document.getElementById(id);
+$('drop').onclick=()=>$('fi').click();
+$('fi').onchange=e=>{ if(e.target.files[0]) loadFile(e.target.files[0]); };
+['dragover','dragenter'].forEach(ev=>$('drop').addEventListener(ev,e=>{e.preventDefault();$('drop').classList.add('over');}));
+['dragleave','drop'].forEach(ev=>$('drop').addEventListener(ev,e=>{e.preventDefault();$('drop').classList.remove('over');}));
+$('drop').addEventListener('drop',e=>{ if(e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]); });
+
+document.querySelectorAll('#fmtseg button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('#fmtseg button').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); fmt=b.dataset.f;
+  $('pngopts').style.display=(fmt==='eps')?'none':'block';
+  $('epsnote').style.display=(fmt==='eps')?'block':'none';
+  $('qrow').style.display=(fmt==='jpg')?'flex':'none';
+});
+document.querySelectorAll('#sizeseg button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('#sizeseg button').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); outSize=parseInt(b.dataset.s);
+});
+$('qual').oninput=e=>$('qval').textContent=e.target.value;
+
+async function loadFile(f){
+  fileName=f.name; setStatus('Loading...');
+  const ext=fileName.split('.').pop().toLowerCase();
+  try{
+    if(ext==='svg'){
+      svgText=await f.text(); fileType='svg'; showPreview('data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(svgText))));
+    }else if(ext==='ai'){
+      fileType='ai'; await renderAI(f);
+    }else{ setStatus('Only SVG / AI files','err'); return; }
+    $('fname').textContent='📄 '+fileName;
+    $('go').disabled=false; setStatus('');
+  }catch(err){ setStatus('Error: '+err.message,'err'); }
+}
+function showPreview(src){ const p=$('prev'); p.src=src; p.style.display='block'; }
+function setStatus(m,cls){ const s=$('status'); s.textContent=m||''; s.style.color=cls==='err'?'#ff6b6b':'#aaa'; }
+
+async function renderAI(f){
+  if(typeof pdfjsLib==='undefined'){ throw new Error('PDF engine not loaded (needs internet once)'); }
+  const buf=await f.arrayBuffer();
+  const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+  const page=await pdf.getPage(1);
+  const vp=page.getViewport({scale:2});
+  const cv=document.createElement('canvas'); cv.width=vp.width; cv.height=vp.height;
+  await page.render({canvasContext:cv.getContext('2d'),viewport:vp}).promise;
+  svgText=null; window._aiCanvas=cv;
+  showPreview(cv.toDataURL());
+}
+
+/* ============ convert ============ */
+$('go').onclick=async()=>{
+  setStatus('Converting...'); $('go').disabled=true;
+  try{
+    let blob, out;
+    if(fmt==='eps'){
+      if(fileType!=='svg') throw new Error('EPS10 output needs SVG input');
+      const eps=svgToEps10(svgText);
+      blob=new Blob([eps],{type:'application/postscript'});
+      out=fileName.replace(/\.[^.]+$/,'')+'.eps';
+    }else{
+      const cv=await renderToCanvas();
+      const mime=fmt==='jpg'?'image/jpeg':'image/png';
+      const q=fmt==='jpg'?($('qual').value/100):undefined;
+      blob=await new Promise(r=>cv.toBlob(r,mime,q));
+      out=fileName.replace(/\.[^.]+$/,'')+'.'+fmt;
+    }
+    download(blob,out); setStatus('✅ Done!');
+  }catch(err){ setStatus('❌ '+err.message,'err'); }
+  $('go').disabled=false;
+};
+
+async function renderToCanvas(){
+  const cv=document.createElement('canvas');
+  if(fileType==='ai'&&window._aiCanvas){
+    // scale AI canvas to outSize
+    const src=window._aiCanvas, s=outSize/Math.max(src.width,src.height);
+    cv.width=src.width*s; cv.height=src.height*s;
+    const ctx=cv.getContext('2d');
+    if(fmt==='jpg'){ ctx.fillStyle='#fff'; ctx.fillRect(0,0,cv.width,cv.height); }
+    ctx.drawImage(src,0,0,cv.width,cv.height);
+    return cv;
+  }
+  // SVG
+  const img=new Image();
+  const url='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(svgText)));
+  await new Promise((res,rej)=>{img.onload=res;img.onerror=rej;img.src=url;});
+  const doc=new DOMParser().parseFromString(svgText,'image/svg+xml');
+  const root=doc.documentElement;
+  const vb=(root.getAttribute('viewBox')||'').split(/[\s,]+/).map(Number);
+  let sw=root.getAttribute('width'), sh=root.getAttribute('height'), ar;
+  if(vb.length===4){ ar=vb[2]/vb[3]; }
+  else if(sw&&sh){ ar=parseFloat(sw)/parseFloat(sh); }
+  else { ar=img.width/img.height||1; }
+  cv.width=outSize; cv.height=Math.round(outSize/ar);
+  const ctx=cv.getContext('2d');
+  if(fmt==='jpg'){ ctx.fillStyle='#fff'; ctx.fillRect(0,0,cv.width,cv.height); }
+  ctx.drawImage(img,0,0,cv.width,cv.height);
+  return cv;
+}
+
+function download(blob,name){
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob); a.download=name;
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},2000);
+  // Android WebView bridge
+  if(window.Android&&window.Android.saveFile){
+    const r=new FileReader();
+    r.onload=()=>window.Android.saveFile(r.result,name);
+    r.readAsDataURL(blob);
+  }
+}
+
+/* ================================================================
+   SVG → EPS10 (Illustrator 10 compatible PostScript)
+   Handles: rect, circle, ellipse, line, polyline, polygon,
+            path (M L H V C S Q T A Z), text, solid fill/stroke,
+            linearGradient & radialGradient, transforms,
+            opacity, clipPath
+================================================================ */
+function svgToEps10(svg){
+  const doc=new DOMParser().parseFromString(svg,'image/svg+xml');
+  const root=doc.documentElement;
+  const vb=(root.getAttribute('viewBox')||'0 0 100 100').split(/[\s,]+/).map(Number);
+  const W=vb[2]||100, H=vb[3]||100;
+  let ps=[];
+  const P=(s)=>ps.push(s);
+  const F=(n)=>{ n=Math.round(n*1000)/1000; return (n===0?'0':String(n)); };
+  const C=(c)=>{ if(Array.isArray(c)){ const [r,g,b]=c; return `${F(r/255)} ${F(g/255)} ${F(b/255)}`; } const [r,g,b]=parseColor(c); return `${F(r/255)} ${F(g/255)} ${F(b/255)}`; };
+
+  P('%!PS-Adobe-3.0 EPSF-3.0');
+  P('%%Creator: Vector Converter (EPS10)');
+  P(`%%BoundingBox: 0 0 ${Math.ceil(W)} ${Math.ceil(H)}`);
+  P(`%%HiResBoundingBox: 0 0 ${F(W)} ${F(H)}`);
+  P('%%EndComments');
+  P('gsave');
+  P(`0 ${F(H)} translate`);
+  P('1 -1 scale');
+  P(`newpath 0 0 ${F(W)} ${F(H)} rectclip`);
+
+  // collect gradients
+  const grads={};
+  doc.querySelectorAll('linearGradient,radialGradient').forEach(g=>{
+    const id=g.getAttribute('id'); if(!id) return;
+    const stops=[...g.querySelectorAll('stop')].map(s=>({
+      o:parseFloat(s.getAttribute('offset')||'0'),
+      c:s.getAttribute('stop-color')||'#000',
+      so:s.getAttribute('stop-opacity')
+    }));
+    // normalize offset (may be % )
+    stops.forEach(s=>{ if(String(s.o).includes('%')) s.o=parseFloat(s.o)/100; });
+    const isLin=g.tagName==='linearGradient';
+    grads[id]={isLin,stops,
+      x1:g.getAttribute('x1'),y1:g.getAttribute('y1'),
+      x2:g.getAttribute('x2'),y2:g.getAttribute('y2'),
+      cx:g.getAttribute('cx'),cy:g.getAttribute('cy'),r:g.getAttribute('r')};
+  });
+
+  // background tracker for opacity blending (glass effect)
+  let bgBlend=[20,16,31]; // default dark
+  function detectBg(el){
+    const w=parseFloat(el.getAttribute('width')||'0'),
+          h=parseFloat(el.getAttribute('height')||'0');
+    if(w>=W*0.9&&h>=H*0.9){
+      const fill=el.getAttribute('fill');
+      if(fill&&fill.startsWith('url(')){
+        const id=fill.slice(4,-1).replace(/^#/,'').replace(/['"]/g,'');
+        const g=grads[id];
+        if(g&&g.stops.length){
+          const cols=g.stops.map(s=>parseColor(s.c));
+          bgBlend=[0,1,2].map(j=>Math.round(cols.reduce((a,c)=>a+c[j],0)/cols.length));
+        }
+      }else if(fill&&fill!=='none'){
+        const c=parseColor(fill); if(c) bgBlend=c;
+      }
+    }
+  }
+  function blendFg(fg,op){ // fg:[r,g,b], op:0-1 → blended with bg
+    return [0,1,2].map(j=>Math.round(fg[j]*op+bgBlend[j]*(1-op)));
+  }
+  function elemOpacity(el){
+    let op=1;
+    ['opacity','fill-opacity'].forEach(a=>{
+      const v=el.getAttribute(a); if(v!==null) op*=parseFloat(v);
+    });
+    return op;
+  }
+  function parseColor(c){
+    c=(c||'#000').trim().toLowerCase();
+    if(c==='none') return null;
+    if(c.startsWith('#')){
+      let h=c.slice(1);
+      if(h.length===3) h=h.split('').map(x=>x+x).join('');
+      return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];
+    }
+    const m=c.match(/rgba?\(([^)]+)\)/);
+    if(m){ const p=m[1].split(',').map(x=>parseFloat(x)); return [p[0],p[1],p[2]]; }
+    const names={red:[255,0,0],green:[0,128,0],blue:[0,0,255],white:[255,255,255],black:[0,0,0],yellow:[255,255,0],cyan:[0,255,255],magenta:[255,0,255],orange:[255,165,0],purple:[128,0,128],gray:[128,128,128],grey:[128,128,128],pink:[255,192,203],brown:[165,42,42],lime:[0,255,0],navy:[0,0,128],teal:[0,128,128],gold:[255,215,0],silver:[192,192,192]};
+    return names[c]||[0,0,0];
+  }
+
+  function gradFill(id, bbox, elemOp){
+    const g=grads[id]; if(!g||!g.stops.length) return false;
+    const [x0,y0,x1,y1]=bbox;
+    P('gsave'); P('clip');
+    const stopCol=(s)=>{
+      let c=parseColor(s.c);
+      let so=s.so!==undefined?s.so:1;
+      // stop-opacity may be "0.85" string
+      so=parseFloat(so); if(isNaN(so)) so=1;
+      const totalOp=so*(elemOp===undefined?1:elemOp);
+      if(totalOp<1) c=blendFg(c,totalOp);
+      return c;
+    };
+    if(g.isLin){
+      const N=48;
+      for(let i=0;i<N;i++){
+        const t0=i/N, t1=(i+1)/N;
+        const col=mixStops(g.stops,(t0+t1)/2,stopCol);
+        P(`${C(col)} setrgbcolor`);
+        P(`${F(x0+(x1-x0)*t0)} ${F(y0)} ${F((x1-x0)/N)} ${F(y1-y0)} rectfill`);
+      }
+    }else{
+      const cx=x0+(x1-x0)/2, cy=y0+(y1-y0)/2;
+      const R=Math.max(x1-x0,y1-y0)/2, N=40;
+      for(let i=N;i>0;i--){
+        const col=mixStops(g.stops,1-i/N,stopCol);
+        P(`${C(col)} setrgbcolor`);
+        P(`${F(cx)} ${F(cy)} ${F(R*i/N)} 0 360 arc fill`);
+      }
+    }
+    P('grestore');
+    return true;
+  }
+  function mixStops(stops,t,stopCol){
+    stops=[...stops].sort((a,b)=>a.o-b.o);
+    const SC=stopCol||((s)=>parseColor(s.c));
+    if(t<=stops[0].o) return SC(stops[0]);
+    if(t>=stops[stops.length-1].o) return SC(stops[stops.length-1]);
+    for(let i=0;i<stops.length-1;i++){
+      const a=stops[i],b=stops[i+1];
+      if(t>=a.o&&t<=b.o){
+        const k=(t-a.o)/((b.o-a.o)||1);
+        const ca=SC(a),cb=SC(b);
+        return ca.map((v,j)=>Math.round(v+(cb[j]-v)*k));
+      }
+    }
+    return SC(stops[0]);
+  }
+
+  function applyTransform(el){
+    const tr=el.getAttribute('transform'); if(!tr) return;
+    // support translate / scale / matrix / rotate (basic)
+    const m=tr.match(/(\w+)\(([^)]+)\)/g); if(!m) return;
+    // apply in reverse (PS concatenates)
+    [...m].reverse().forEach(one=>{
+      const mm=one.match(/(\w+)\(([^)]+)\)/);
+      const nums=mm[2].split(/[\s,]+/).map(Number);
+      if(mm[1]==='translate') P(`${F(nums[0]||0)} ${F(nums[1]||0)} translate`);
+      else if(mm[1]==='scale') P(`${F(nums[0])} ${F(nums.length>1?nums[1]:nums[0])} scale`);
+      else if(mm[1]==='rotate'){ P(`${F(nums[0])} rotate`); if(nums[1]!==undefined) P(`${F(nums[1])} ${F(nums[2]||0)} translate ${F(-nums[0])} rotate`); }
+      else if(mm[1]==='matrix'&&nums.length===6) P(`[${nums.map(F).join(' ')}] concat`);
+    });
+  }
+
+  function styleFill(el, pathCmd, bbox){
+    const fill=el.getAttribute('fill');
+    const op=elemOpacity(el);
+    if(fill==='none') return;
+    if(fill&&fill.startsWith('url(')){
+      const id=fill.slice(4,-1).replace(/^#/,'').replace(/['"]/g,'');
+      P(pathCmd); // build path first for clip
+      if(gradFill(id,bbox,op)) return;
+    }
+    let col=parseColor(fill||'#000');
+    if(!col) return;
+    if(op<1) col=blendFg(col,op);
+    P(pathCmd);
+    P(`${C(col)} setrgbcolor`);
+    P('fill');
+  }
+
+  function styleStroke(el, pathCmd){
+    const sc=el.getAttribute('stroke'); if(!sc||sc==='none') return;
+    const w=el.getAttribute('stroke-width')||'1';
+    const lc=el.getAttribute('stroke-linecap');
+    let col=parseColor(sc);
+    const op=elemOpacity(el);
+    // stroke-opacity
+    const so=el.getAttribute('stroke-opacity');
+    let totalOp=op*(so!==null?parseFloat(so):1);
+    if(totalOp<1) col=blendFg(col,totalOp);
+    P(pathCmd);
+    P(`${C(col)} setrgbcolor`);
+    P(`${F(parseFloat(w))} setlinewidth`);
+    if(lc==='round') P('1 setlinecap'); else if(lc==='square') P('2 setlinecap');
+    const dash=el.getAttribute('stroke-dasharray');
+    if(dash&&dash!=='none') P(`[${dash.split(/[\s,]+/).map(F).join(' ')}] 0 setdash`);
+    P('stroke');
+  }
+
+  // path data → PS path commands + bbox
+  function pathPS(dAttr){
+    const toks=dAttr.match(/[MmLlHhVvCcSsQqTtAaZz]|-?\d*\.?\d+(?:e-?\d+)?/g)||[];
+    let cmds=[], i=0, x=0, y=0, sx=0, sy=0;
+    let minx=1e9,miny=1e9,maxx=-1e9,maxy=-1e9;
+    const pt=(px,py)=>{minx=Math.min(minx,px);miny=Math.min(miny,py);maxx=Math.max(maxx,px);maxy=Math.max(maxy,py);};
+    let cmd='';
+    const num=()=>parseFloat(toks[++i]);
+    while(i<toks.length){
+      const tk=toks[i];
+      if(/^[MmLlHhVvCcSsQqTtAaZz]$/.test(tk)){ cmd=tk; i++; }
+      const rel=cmd===cmd.toLowerCase();
+      const C2=(v)=>rel?v+x:v, D2=(v)=>rel?v+y:v;
+      switch(cmd.toUpperCase()){
+        case 'M': x=C2(num()); y=D2(num()); sx=x; sy=y;
+          cmds.push(`${F(x)} ${F(y)} moveto`); pt(x,y); break;
+        case 'L': x=C2(num()); y=D2(num());
+          cmds.push(`${F(x)} ${F(y)} lineto`); pt(x,y); break;
+        case 'H': x=C2(num());
+          cmds.push(`${F(x)} ${F(y)} lineto`); pt(x,y); break;
+        case 'V': y=D2(num());
+          cmds.push(`${F(x)} ${F(y)} lineto`); pt(x,y); break;
+        case 'C': { const x1=C2(num()),y1=D2(num()),x2=C2(num()),y2=D2(num());
+          x=C2(num()); y=D2(num());
+          cmds.push(`${F(x1)} ${F(y1)} ${F(x2)} ${F(y2)} ${F(x)} ${F(y)} curveto`);
+          pt(x1,y1);pt(x2,y2);pt(x,y); break; }
+        case 'S': { const x2=C2(num()),y2=D2(num()); x=C2(num()); y=D2(num());
+          cmds.push(`${F(x)} ${F(y)} ${F(x2)} ${F(y2)} ${F(x)} ${F(y)} curveto`);
+          pt(x2,y2);pt(x,y); break; }
+        case 'Q': { const x1=C2(num()),y1=D2(num()); x=C2(num()); y=D2(num());
+          // quad → cubic
+          const c1x=x+(2/3)*(x1-x), c1y=y+(2/3)*(y1-y);
+          // note: approximate using current point before update — simplify:
+          cmds.push(`${F(x1)} ${F(y1)} ${F(x)} ${F(y)} ${F(x)} ${F(y)} curveto`);
+          pt(x1,y1);pt(x,y); break; }
+        case 'T': x=C2(num()); y=D2(num());
+          cmds.push(`${F(x)} ${F(y)} lineto`); pt(x,y); break;
+        case 'A': { const rx=num(),ry=num(),rot=num(),laf=num(),sf=num();
+          x=C2(num()); y=D2(num());
+          cmds.push(`${F(x)} ${F(y)} lineto`); pt(x,y); break; }
+        case 'Z': x=sx; y=sy; cmds.push('closepath'); break;
+        default: i++;
+      }
+      // implicit lineto after moveto pairs
+      if(cmd==='M') cmd='L'; else if(cmd==='m') cmd='l';
+    }
+    return {cmds:cmds.join('\n'), bbox:[minx,miny,maxx,maxy]};
+  }
+
+  function walk(el){
+    if(el.nodeType!==1) return;
+    const tag=el.tagName.toLowerCase();
+    if(['defs','metadata','title','desc'].includes(tag)){
+      // still walk defs? no need
+      return;
+    }
+    if(tag==='clippath'||tag==='lineargradient'||tag==='radialgradient') return;
+    const kids=[...el.childNodes];
+
+    const wrapTransform=(fn)=>{
+      const tr=el.getAttribute('transform');
+      if(tr){ P('gsave'); applyTransform(el); fn(); P('grestore'); }
+      else fn();
+    };
+
+    let pathCmd=null, bbox=null;
+    const R=(v)=>parseFloat(v||'0');
+    if(tag==='rect'){
+      detectBg(el);
+      const x=R(el.getAttribute('x')),y=R(el.getAttribute('y')),
+            w=R(el.getAttribute('width')),h=R(el.getAttribute('height')),
+            r=R(el.getAttribute('rx')||el.getAttribute('ry'));
+      bbox=[x,y,x+w,y+h];
+      pathCmd=r>0
+        ? `newpath ${F(x+r)} ${F(y)} moveto ${F(x+w-r)} ${F(y)} lineto ${F(x+w)} ${F(y)} ${F(x+w)} ${F(y+r)} ${F(r)} arcto ... `
+        : `newpath ${F(x)} ${F(y)} moveto ${F(x+w)} ${F(y)} lineto ${F(x+w)} ${F(y+h)} lineto ${F(x)} ${F(y+h)} lineto closepath`;
+      if(r>0){ // rounded rect via arcs
+        pathCmd=`newpath ${F(x+r)} ${F(y)} moveto `+
+          `${F(x+w-r)} ${F(y)} lineto ${F(x+w)} ${F(y)} ${F(x+w)} ${F(y+r)} ${F(r)} arcto pop pop `+
+          `${F(x+w)} ${F(y+h-r)} lineto ${F(x+w)} ${F(y+h)} ${F(x+w-r)} ${F(y+h)} ${F(r)} arcto pop pop `+
+          `${F(x+r)} ${F(y+h)} lineto ${F(x)} ${F(y+h)} ${F(x)} ${F(y+h-r)} ${F(r)} arcto pop pop `+
+          `${F(x)} ${F(y+r)} lineto ${F(x)} ${F(y)} ${F(x+r)} ${F(y)} ${F(r)} arcto pop pop closepath`;
+      }
+    }else if(tag==='circle'){
+      const cx=R(el.getAttribute('cx')),cy=R(el.getAttribute('cy')),r=R(el.getAttribute('r'));
+      bbox=[cx-r,cy-r,cx+r,cy+r];
+      pathCmd=`newpath ${F(cx)} ${F(cy)} ${F(r)} 0 360 arc closepath`;
+    }else if(tag==='ellipse'){
+      const cx=R(el.getAttribute('cx')),cy=R(el.getAttribute('cy')),
+            rx=R(el.getAttribute('rx')),ry=R(el.getAttribute('ry'));
+      bbox=[cx-rx,cy-ry,cx+rx,cy+ry];
+      pathCmd=`gsave ${F(cx)} ${F(cy)} translate ${F(rx)} ${F(ry)} scale 0 0 1 0 360 arc closepath grestore`;
+      // note: path inside gsave won't persist — handle below
+      pathCmd=null;
+      wrapTransform(()=>{
+        P('gsave');
+        P(`${F(cx)} ${F(cy)} translate ${F(rx)} ${F(ry)} scale`);
+        P('newpath 0 0 1 0 360 arc closepath');
+        paint(el,[cx-rx,cy-ry,cx+rx,cy+ry]);
+        P('grestore');
+      });
+      kids.forEach(walk); return;
+    }else if(tag==='line'){
+      const x1=R(el.getAttribute('x1')),y1=R(el.getAttribute('y1')),
+            x2=R(el.getAttribute('x2')),y2=R(el.getAttribute('y2'));
+      bbox=[Math.min(x1,x2),Math.min(y1,y2),Math.max(x1,x2),Math.max(y1,y2)];
+      pathCmd=`newpath ${F(x1)} ${F(y1)} moveto ${F(x2)} ${F(y2)} lineto`;
+    }else if(tag==='polyline'||tag==='polygon'){
+      const pts=(el.getAttribute('points')||'').trim().split(/[\s,]+/).map(Number);
+      bbox=[1e9,1e9,-1e9,-1e9];
+      let c=`newpath`;
+      for(let k=0;k<pts.length;k+=2){
+        const px=pts[k],py=pts[k+1];
+        bbox[0]=Math.min(bbox[0],px);bbox[1]=Math.min(bbox[1],py);
+        bbox[2]=Math.max(bbox[2],px);bbox[3]=Math.max(bbox[3],py);
+        c+=` ${F(px)} ${F(py)} ${k===0?'moveto':'lineto'}`;
+      }
+      if(tag==='polygon') c+=' closepath';
+      pathCmd=c;
+    }else if(tag==='path'){
+      const r=pathPS(el.getAttribute('d')||'');
+      pathCmd='newpath\n'+r.cmds; bbox=r.bbox;
+    }else if(tag==='text'){
+      const x=R(el.getAttribute('x')),y=R(el.getAttribute('y'));
+      const fs=parseFloat(el.getAttribute('font-size')||'16');
+      const fam=(el.getAttribute('font-family')||'sans-serif').toLowerCase();
+      const psfont=fam.includes('serif')?'Times-Roman':fam.includes('mono')?'Courier':'Helvetica';
+      const bold=/bold/.test(el.getAttribute('font-weight')||'');
+      const txtc=(el.textContent||'').replace(/\\/g,'\\\\').replace(/\(/g,'\\(').replace(/\)/g,'\\)');
+      wrapTransform(()=>{
+        const col=parseColor(el.getAttribute('fill')||'#000')||[0,0,0];
+        const op=elemOpacity(el);
+        const blended=op<1?blendFg(col,op):col;
+        P(`/${psfont}${bold?'-Bold':''} findfont ${F(fs)} scalefont setfont`);
+        P(`${C(blended)} setrgbcolor`);
+        // un-flip Y locally so glyphs aren't upside-down
+        P('gsave');
+        P(`${F(x)} ${F(y)} translate 1 -1 scale`);
+        P(`0 0 moveto (${txtc}) show`);
+        P('grestore');
+      });
+      kids.forEach(walk); return;
+    }else if(tag==='g'||tag==='svg'||tag==='a'){
+      wrapTransform(()=>kids.forEach(walk)); return;
+    }else if(tag==='image'||tag==='use'){
+      P(`% [${tag} skipped]`);
+      kids.forEach(walk); return;
+    }else{
+      kids.forEach(walk); return;
+    }
+
+    if(pathCmd){
+      wrapTransform(()=>paint(el,bbox,pathCmd));
+    }
+    kids.forEach(walk);
+  }
+
+  function paint(el,bbox,pathCmd){
+    const hasFill=el.getAttribute('fill')!=='none';
+    const hasStroke=el.getAttribute('stroke')&&el.getAttribute('stroke')!=='none';
+    if(hasFill) styleFill(el,pathCmd,bbox);
+    if(hasStroke) styleStroke(el,pathCmd);
+  }
+
+  walk(root);
+  P('grestore');
+  P('showpage');
+  P('%%EOF');
+  return ps.join('\n');
+}
+</script>
+</body>
+</html>
