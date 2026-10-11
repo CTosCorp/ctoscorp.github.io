@@ -45,7 +45,16 @@ async function signOut() { await sb.auth.signOut(); ME = null; }
 /* ---------------- Posts ---------------- */
 async function getFeed(limit = 60) {
   const { data: posts, error } = await sb.from('posts').select('*')
+    .is('group_id', null)
     .order('pinned', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return hydratePosts(posts || []);
+}
+async function getFeedChrono(limit = 60) {
+  const { data: posts, error } = await sb.from('posts').select('*')
+    .is('group_id', null)
     .order('created_at', { ascending: false })
     .limit(limit);
   if (error) throw error;
@@ -92,10 +101,12 @@ async function hydratePosts(posts) {
   }));
 }
 
-async function createPost({ text, image_url, bg, shared_from }) {
+async function createPost({ text, image_url, bg, shared_from, feeling, video_url, group_id }) {
   const { data, error } = await sb.from('posts').insert({
     author_id: ME.id, text: text || '', image_url: image_url || null,
     bg: bg || null, shared_from: shared_from || null,
+    feeling: feeling || null, video_url: video_url || null,
+    group_id: group_id || null,
   }).select().single();
   if (error) throw error;
   return data;
@@ -387,6 +398,241 @@ async function cleanupMyStories() {
     await sb.from('stories').delete()
       .lt('expires_at', new Date().toISOString()).eq('author_id', ME.id);
   } catch (e) { /* ignore */ }
+}
+
+/* ---------------- Saved posts ---------------- */
+async function isPostSaved(postId) {
+  const { data } = await sb.from('saved_posts').select('post_id')
+    .eq('user_id', ME.id).eq('post_id', postId).limit(1);
+  return !!(data && data.length);
+}
+async function toggleSave(postId) {
+  if (await isPostSaved(postId)) {
+    const { error } = await sb.from('saved_posts').delete().eq('user_id', ME.id).eq('post_id', postId);
+    if (error) throw error;
+    return false;
+  }
+  const { error } = await sb.from('saved_posts').insert({ user_id: ME.id, post_id: postId });
+  if (error) throw error;
+  return true;
+}
+async function getSavedPosts() {
+  const { data } = await sb.from('saved_posts').select('post_id')
+    .eq('user_id', ME.id).order('created_at', { ascending: false });
+  const ids = (data || []).map(r => r.post_id);
+  if (!ids.length) return [];
+  const { data: posts } = await sb.from('posts').select('*').in('id', ids);
+  const pmap = Object.fromEntries((posts || []).map(p => [p.id, p]));
+  return hydratePosts(ids.map(id => pmap[id]).filter(Boolean));
+}
+
+/* ---------------- Messenger ---------------- */
+async function getOrCreateConversation(otherId) {
+  const { data: mine } = await sb.from('conversation_participants')
+    .select('conversation_id').eq('user_id', ME.id);
+  const ids = (mine || []).map(r => r.conversation_id);
+  if (ids.length) {
+    const { data: theirs } = await sb.from('conversation_participants')
+      .select('conversation_id').eq('user_id', otherId).in('conversation_id', ids);
+    for (const t of (theirs || [])) {
+      const { count } = await sb.from('conversation_participants')
+        .select('*', { count: 'exact', head: true }).eq('conversation_id', t.conversation_id);
+      if (count === 2) return t.conversation_id;
+    }
+  }
+  const { data: conv, error } = await sb.from('conversations').insert({}).select().single();
+  if (error) throw error;
+  const { error: e2 } = await sb.from('conversation_participants')
+    .insert({ conversation_id: conv.id, user_id: ME.id });
+  if (e2) throw e2;
+  const { error: e3 } = await sb.from('conversation_participants')
+    .insert({ conversation_id: conv.id, user_id: otherId });
+  if (e3) throw e3;
+  return conv.id;
+}
+async function getConversations() {
+  const { data: parts } = await sb.from('conversation_participants')
+    .select('conversation_id,last_read_at').eq('user_id', ME.id);
+  if (!parts || !parts.length) return [];
+  const cids = parts.map(p => p.conversation_id);
+  const readMap = Object.fromEntries(parts.map(p => [p.conversation_id, p.last_read_at]));
+  const { data: others } = await sb.from('conversation_participants')
+    .select('conversation_id,user_id').in('conversation_id', cids).neq('user_id', ME.id);
+  const otherByConv = {};
+  (others || []).forEach(o => { otherByConv[o.conversation_id] = o.user_id; });
+  const otherIds = [...new Set(Object.values(otherByConv))];
+  let umap = {};
+  if (otherIds.length) {
+    const { data: us } = await sb.from('profiles').select('id,name,avatar_url').in('id', otherIds);
+    umap = Object.fromEntries((us || []).map(u => [u.id, u]));
+  }
+  const { data: msgs } = await sb.from('messages')
+    .select('conversation_id,sender_id,text,created_at').in('conversation_id', cids)
+    .order('created_at', { ascending: false }).limit(400);
+  return cids.map(cid => {
+    const cms = (msgs || []).filter(m => m.conversation_id === cid);
+    const last = cms[0] || null;
+    const unread = cms.filter(m => m.sender_id !== ME.id && new Date(m.created_at) > new Date(readMap[cid] || 0)).length;
+    return {
+      id: cid, other: umap[otherByConv[cid]] || { name: '?' },
+      otherId: otherByConv[cid], last, unread,
+      updatedAt: last ? last.created_at : null,
+    };
+  }).sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
+}
+async function getMessages(cid, limit = 60) {
+  const { data } = await sb.from('messages').select('*').eq('conversation_id', cid)
+    .order('created_at', { ascending: true });
+  return (data || []).slice(-limit);
+}
+async function sendMessage(cid, text) {
+  const { data, error } = await sb.from('messages')
+    .insert({ conversation_id: cid, sender_id: ME.id, text }).select().single();
+  if (error) throw error;
+  await sb.from('conversation_participants')
+    .update({ last_read_at: new Date().toISOString() })
+    .eq('conversation_id', cid).eq('user_id', ME.id);
+  return data;
+}
+async function markConvRead(cid) {
+  await sb.from('conversation_participants')
+    .update({ last_read_at: new Date().toISOString() })
+    .eq('conversation_id', cid).eq('user_id', ME.id);
+}
+
+/* ---------------- Marketplace ---------------- */
+async function getListings() {
+  const { data, error } = await sb.from('listings').select('*')
+    .eq('sold', false).order('created_at', { ascending: false }).limit(60);
+  if (error) throw error;
+  const ids = [...new Set((data || []).map(l => l.seller_id))];
+  let umap = {};
+  if (ids.length) {
+    const { data: us } = await sb.from('profiles').select('id,name,avatar_url').in('id', ids);
+    umap = Object.fromEntries((us || []).map(u => [u.id, u]));
+  }
+  return (data || []).map(l => ({ ...l, seller: umap[l.seller_id] || { name: '?' } }));
+}
+async function createListing({ title, price, description, image_url }) {
+  const { data, error } = await sb.from('listings')
+    .insert({ seller_id: ME.id, title, price: Number(price) || 0, description: description || '', image_url: image_url || null })
+    .select().single();
+  if (error) throw error;
+  return data;
+}
+async function deleteListing(id) {
+  const { error } = await sb.from('listings').delete().eq('id', id);
+  if (error) throw error;
+}
+async function toggleSold(id, sold) {
+  const { error } = await sb.from('listings').update({ sold: !sold }).eq('id', id);
+  if (error) throw error;
+}
+
+/* ---------------- Events ---------------- */
+async function getEvents() {
+  const { data, error } = await sb.from('events').select('*')
+    .gte('starts_at', new Date().toISOString()).order('starts_at', { ascending: true }).limit(60);
+  if (error) throw error;
+  const ids = (data || []).map(e => e.id);
+  const counts = {}, mine = {};
+  if (ids.length) {
+    const { data: rsvps } = await sb.from('event_rsvps').select('event_id,status,user_id').in('event_id', ids);
+    (rsvps || []).forEach(r => {
+      counts[r.event_id] = counts[r.event_id] || { interested: 0, going: 0 };
+      counts[r.event_id][r.status]++;
+      if (r.user_id === ME.id) mine[r.event_id] = r.status;
+    });
+  }
+  return (data || []).map(e => ({ ...e, counts: counts[e.id] || { interested: 0, going: 0 }, myRsvp: mine[e.id] || null }));
+}
+async function createEvent({ title, description, location, starts_at, image_url }) {
+  const { data, error } = await sb.from('events')
+    .insert({ creator_id: ME.id, title, description: description || '', location: location || '', starts_at, image_url: image_url || null })
+    .select().single();
+  if (error) throw error;
+  return data;
+}
+async function setRsvp(eventId, status) {
+  const { error } = await sb.from('event_rsvps')
+    .upsert({ event_id: eventId, user_id: ME.id, status }, { onConflict: 'event_id,user_id' });
+  if (error) throw error;
+}
+async function deleteEvent(id) {
+  const { error } = await sb.from('events').delete().eq('id', id);
+  if (error) throw error;
+}
+
+/* ---------------- Groups ---------------- */
+async function getGroups() {
+  const { data: mine } = await sb.from('group_members').select('group_id').eq('user_id', ME.id);
+  const myIds = new Set((mine || []).map(m => m.group_id));
+  const { data: groups, error } = await sb.from('groups').select('*')
+    .order('created_at', { ascending: false }).limit(60);
+  if (error) throw error;
+  const ids = (groups || []).map(g => g.id);
+  const counts = {};
+  if (ids.length) {
+    const { data: ms } = await sb.from('group_members').select('group_id').in('group_id', ids);
+    (ms || []).forEach(m => { counts[m.group_id] = (counts[m.group_id] || 0) + 1; });
+  }
+  return (groups || []).map(g => ({ ...g, memberCount: counts[g.id] || 0, joined: myIds.has(g.id) }));
+}
+async function createGroup({ name, description, cover_url }) {
+  const { data, error } = await sb.from('groups')
+    .insert({ creator_id: ME.id, name, description: description || '', cover_url: cover_url || null })
+    .select().single();
+  if (error) throw error;
+  await sb.from('group_members').insert({ group_id: data.id, user_id: ME.id });
+  return data;
+}
+async function toggleGroupJoin(groupId, joined) {
+  if (joined) {
+    const { error } = await sb.from('group_members').delete().eq('group_id', groupId).eq('user_id', ME.id);
+    if (error) throw error;
+  } else {
+    const { error } = await sb.from('group_members').insert({ group_id: groupId, user_id: ME.id });
+    if (error) throw error;
+  }
+}
+async function deleteGroup(id) {
+  const { error } = await sb.from('groups').delete().eq('id', id);
+  if (error) throw error;
+}
+async function getGroupPage(id) {
+  const { data: group, error } = await sb.from('groups').select('*').eq('id', id).single();
+  if (error) throw error;
+  const { data: members } = await sb.from('group_members').select('user_id').eq('group_id', id);
+  const mids = (members || []).map(m => m.user_id);
+  let mprofs = [];
+  if (mids.length) {
+    const { data } = await sb.from('profiles').select('id,name,bio,avatar_url').in('id', mids);
+    mprofs = data || [];
+  }
+  const { data: posts } = await sb.from('posts').select('*').eq('group_id', id)
+    .order('created_at', { ascending: false }).limit(40);
+  return { group, members: mprofs, posts: await hydratePosts(posts || []), joined: mids.includes(ME.id) };
+}
+
+/* ---------------- Memories ---------------- */
+async function getMemories() {
+  const { data: posts } = await sb.from('posts').select('*').eq('author_id', ME.id)
+    .order('created_at', { ascending: false }).limit(300);
+  const now = new Date();
+  const mems = (posts || []).filter(p => {
+    const d = new Date(p.created_at);
+    return d.getMonth() === now.getMonth() && d.getDate() === now.getDate() && d.getFullYear() < now.getFullYear();
+  });
+  return hydratePosts(mems);
+}
+
+/* ---------------- Video posts ---------------- */
+async function getVideoPosts(limit = 40) {
+  const { data, error } = await sb.from('posts').select('*')
+    .not('video_url', 'is', null).is('group_id', null)
+    .order('created_at', { ascending: false }).limit(limit);
+  if (error) throw error;
+  return hydratePosts(data || []);
 }
 
 /* ---------------- Realtime ---------------- */

@@ -140,7 +140,14 @@ async function logout() {
 
 /* ---------------- App shell ---------------- */
 let rtChannels = [];
-function teardownRealtime() { rtChannels.forEach(ch => { try { sb.removeChannel(ch); } catch (e) {} }); rtChannels = []; }
+function teardownRealtime() {
+  rtChannels.forEach(ch => { try { sb.removeChannel(ch); } catch (e) {} });
+  rtChannels = [];
+  (S.chats || []).forEach(ch => { try { ch.channel && sb.removeChannel(ch.channel); } catch (e) {} });
+  S.chats = [];
+  const dock = document.getElementById('chatDock');
+  if (dock) dock.remove();
+}
 
 function renderApp() {
   teardownRealtime();
@@ -153,25 +160,26 @@ function renderApp() {
     <div class="tb-left">
       <div class="logo" onclick="goHome()">${esc((st.site_name || 'F')[0])}</div>
       <div class="search-box">
-        <span class="search-ico">⌕</span>
+        ${icon('search', 16)}
         <input id="q" placeholder="Search ${esc(st.site_name)}" value="${esc(S.query)}"
           onkeydown="if(event.key==='Enter')doSearch(this.value)">
       </div>
     </div>
     <nav class="tb-center">
-      <button class="tb-tab ${S.view === 'home' ? 'active' : ''}" onclick="goHome()" title="Home">⌂</button>
-      <button class="tb-tab" onclick="toast('Watch is decorative in this demo')" title="Video">▶</button>
-      <button class="tb-tab" onclick="toast('Marketplace is decorative in this demo')" title="Marketplace">▦</button>
-      <button class="tb-tab ${S.view === 'friends' ? 'active' : ''}" onclick="showFriends()" title="Friends">👥</button>
+      <button class="tb-tab ${S.view === 'home' ? 'active' : ''}" onclick="goHome()" title="Home">${icon('home', 26)}</button>
+      <button class="tb-tab ${S.view === 'watch' ? 'active' : ''}" onclick="goWatch()" title="Watch">${icon('video', 26)}</button>
+      <button class="tb-tab ${S.view === 'marketplace' ? 'active' : ''}" onclick="goMarketplace()" title="Marketplace">${icon('store', 26)}</button>
+      <button class="tb-tab ${S.view === 'friends' ? 'active' : ''}" onclick="showFriends()" title="Friends">${icon('users', 26)}</button>
     </nav>
     <div class="tb-right">
-      <span class="live-dot" title="Realtime connected">● LIVE</span>
-      <button class="tb-ico" onclick="toast('Messenger is decorative in this demo')" title="Messenger">✉</button>
-      <button class="tb-ico" onclick="toggleNotif(event)" title="Notifications">🔔<span class="badge" id="notifBadge">0</span></button>
+      <span class="live-dot" title="Realtime connected"></span>
+      <button class="tb-ico" onclick="toggleInbox(event)" title="Messenger">${icon('chat', 20)}<span class="badge" id="msgBadge" style="display:none">0</span></button>
+      <button class="tb-ico" onclick="toggleNotif(event)" title="Notifications">${icon('bell', 20)}<span class="badge" id="notifBadge" style="display:none">0</span></button>
       <button class="tb-avatar" onclick="toggleMenu(event,'profile')">${pav(ME, 36)}</button>
     </div>
   </header>
   <div id="dropdown"></div>
+  <div id="chatDock"></div>
   <div class="layout">
     <aside class="side left">${leftNavHTML()}</aside>
     <main class="feed" id="feed"><div class="card empty">Loading feed...</div></main>
@@ -182,15 +190,24 @@ function renderApp() {
   renderView();
   setupRealtime();
   refreshNotifBadge();
+  refreshMsgBadge();
   cleanupMyStories().then(() => { if (S.view === 'home') refreshStories(); }).catch(() => {});
 }
 function closeDropdowns(e) {
   if (!e.target.closest('#dropdown') && !e.target.closest('.tb-ico') && !e.target.closest('.tb-avatar') && !e.target.closest('.post-menu-btn'))
     $('#dropdown').innerHTML = '';
 }
-function goHome() { S.view = 'home'; S.profileId = null; S.query = ''; renderApp(); }
+function goHome() { S.view = 'home'; S.profileId = null; S.query = ''; S.composerGroup = null; renderApp(); }
+function goWatch() { S.view = 'watch'; renderApp(); }
+function goMarketplace() { S.view = 'marketplace'; renderApp(); }
+function goEvents() { S.view = 'events'; renderApp(); }
+function goGroups() { S.view = 'groups'; renderApp(); }
+function goSaved() { S.view = 'saved'; renderApp(); }
+function goMemories() { S.view = 'memories'; renderApp(); }
+function goFeeds() { S.view = 'feeds'; renderApp(); }
 function doSearch(v) { S.query = v.trim(); if (S.query) { S.view = 'search'; renderApp(); } }
 function showFriends() { S.view = 'friends'; renderApp(); }
+function openGroup(id) { S.view = 'group'; S.groupId = id; S.groupTab = 'discussion'; renderApp(); window.scrollTo(0, 0); }
 function openProfile(id) { S.view = 'profile'; S.profileId = id; PROFILE_TAB = 'posts'; renderApp(); window.scrollTo(0, 0); }
 
 async function renderView() {
@@ -199,9 +216,25 @@ async function renderView() {
     if (S.view === 'profile') f.innerHTML = await profileHTML(S.profileId);
     else if (S.view === 'friends') f.innerHTML = await friendsHTML();
     else if (S.view === 'search') f.innerHTML = await searchHTML();
+    else if (S.view === 'watch') f.innerHTML = await watchHTML();
+    else if (S.view === 'marketplace') f.innerHTML = await marketplaceHTML();
+    else if (S.view === 'events') f.innerHTML = await eventsHTML();
+    else if (S.view === 'groups') f.innerHTML = await groupsHTML();
+    else if (S.view === 'group') f.innerHTML = await groupHTML();
+    else if (S.view === 'saved') f.innerHTML = await savedHTML();
+    else if (S.view === 'memories') f.innerHTML = await memoriesHTML();
+    else if (S.view === 'feeds') { f.innerHTML = feedsHTML(); loadFeedsChrono(); }
     else f.innerHTML = homeSkeleton();
     if (S.view === 'home') loadHomeFeed();
     loadRightBar();
+  } catch (e) { err(e); }
+}
+async function loadFeedsChrono() {
+  try {
+    const posts = await getFeedChrono();
+    cachePosts(posts);
+    const el = $('#posts');
+    if (el) el.innerHTML = postsHTML(posts.filter(p => !p.author.banned));
   } catch (e) { err(e); }
 }
 function homeSkeleton() {
@@ -226,10 +259,7 @@ async function loadHomeFeed() {
 }
 function refreshFeedSoon() {
   if (S._rt) clearTimeout(S._rt);
-  S._rt = setTimeout(() => {
-    if (S.view === 'home') loadHomeFeed();
-    else if (S.view === 'profile') renderView();
-  }, 700);
+  S._rt = setTimeout(() => { renderView(); }, 700);
 }
 
 /* ---------------- Realtime ---------------- */
@@ -240,6 +270,10 @@ function setupRealtime() {
   rtChannels.push(onTable('likes', reload));
   rtChannels.push(onTable('stories', debounce(() => { if (S.view === 'home') refreshStories(); }, 600)));
   rtChannels.push(onTable('profiles', debounce(() => loadRightBar(), 800)));
+  rtChannels.push(sb.channel('rt-msg-badge')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+      if (payload.new.sender_id !== ME.id) refreshMsgBadge();
+    }).subscribe());
   rtChannels.push(onTable('notifications', async (payload) => {
     if (payload.eventType === 'INSERT' && payload.new.user_id === ME.id) {
       refreshNotifBadge();
@@ -258,13 +292,19 @@ async function refreshNotifBadge() {
 /* ---------------- Sidebars ---------------- */
 function leftNavHTML() {
   const items = [
-    ['me', ME.name, 'profile'], ['👥', 'Friends', 'friends'], ['🕘', 'Memories', 'x'],
-    ['🔖', 'Saved', 'x'], ['👪', 'Groups', 'x'], ['▶', 'Video', 'x'],
-    ['🏪', 'Marketplace', 'x'], ['📰', 'Feeds', 'x'], ['📅', 'Events', 'x'],
+    ['me', ME.name, 'profile', () => `openProfile('${ME.id}')`],
+    ['users', 'Friends', 'friends', 'showFriends()'],
+    ['clock', 'Memories', 'memories', 'goMemories()'],
+    ['bookmark', 'Saved', 'saved', 'goSaved()'],
+    ['users', 'Groups', 'groups', 'goGroups()'],
+    ['video', 'Watch', 'watch', 'goWatch()'],
+    ['store', 'Marketplace', 'marketplace', 'goMarketplace()'],
+    ['news', 'Feeds', 'feeds', 'goFeeds()'],
+    ['calendar', 'Events', 'events', 'goEvents()'],
   ];
-  return items.map(([ico, label, act]) => `
-    <button class="nav-item" onclick="${act === 'profile' ? `openProfile('${ME.id}')` : act === 'friends' ? 'showFriends()' : `toast('${label} is decorative in this demo')`}">
-      ${act === 'profile' ? pav(ME, 32) : `<span class="nav-ico">${ico}</span>`}
+  return items.map(([ic, label, view, act]) => `
+    <button class="nav-item ${S.view === view ? 'active' : ''}" onclick="${typeof act === 'function' ? act() : act}">
+      ${ic === 'me' ? pav(ME, 32) : `<span class="nav-ico">${icon(ic, 26)}</span>`}
       <span>${esc(label)}</span>
     </button>`).join('');
 }
@@ -280,7 +320,7 @@ async function loadRightBar() {
       </div><hr>
       <div class="side-sec"><div class="side-title">Contacts · ${others.length}</div>
         ${others.slice(0, 14).map(u => `
-          <button class="contact" onclick="openProfile('${u.id}')">
+          <button class="contact" onclick="openChat('${u.id}')">
             <span class="contact-av">${pav(u, 32)}<span class="dot"></span></span>
             <span>${esc(u.name)}</span>
           </button>`).join('') || '<div class="muted">No other users yet.</div>'}
@@ -426,9 +466,9 @@ function composerHTML() {
     </div>
     <hr>
     <div class="composer-actions">
-      <button onclick="toast('Live video is decorative in this demo')">🔴 Live video</button>
-      <button onclick="openComposer()">🖼️ Photo/video</button>
-      <button onclick="toast('Feeling picker is decorative in this demo')">😊 Feeling/activity</button>
+      <button onclick="openVideoRecorder()">${icon('videocam', 20)}<span>Video</span></button>
+      <button onclick="openComposer()">${icon('image', 20)}<span>Photo</span></button>
+      <button onclick="openFeelingPicker()">${icon('smile', 20)}<span>Feeling</span></button>
     </div>
   </div>`;
 }
@@ -445,26 +485,27 @@ function postHTML(p) {
     <div class="post-head">
       <span onclick="openProfile('${a.id || ''}')" class="clickable">${pav(a, 40)}</span>
       <div class="post-meta">
-        <div class="post-name" onclick="openProfile('${a.id || ''}')">${esc(a.name)}
-          ${p.pinned ? ' <span class="pin-tag">📌 Pinned</span>' : ''}</div>
-        <div class="post-time">${timeAgo(p.created_at)} · 🌐</div>
+        <div class="post-name" onclick="openProfile('${a.id || ''}')">${esc(a.name)}${p.feeling ? ` <span class="feeling">— is feeling ${esc(p.feeling)}</span>` : ''}
+          ${p.pinned ? ' <span class="pin-tag">Pinned</span>' : ''}</div>
+        <div class="post-time">${timeAgo(p.created_at)} · ${icon('globe', 12)}</div>
       </div>
-      <button class="post-menu-btn" onclick="toggleMenu(event,'post_${p.id}')">⋯</button>
+      <button class="post-menu-btn" onclick="toggleMenu(event,'post_${p.id}')">${icon('dots', 20)}</button>
     </div>
     ${p.text ? (p.bg
       ? `<div class="post-bgtext ${p.bg}">${esc(p.text)}</div>`
       : `<div class="post-text">${esc(p.text)}</div>`) : ''}
     ${p.image_url ? `<img class="post-img" loading="lazy" src="${esc(p.image_url)}" onerror="this.style.display='none'">` : ''}
+    ${p.video_url ? `<video class="post-video" controls preload="metadata" playsinline src="${esc(p.video_url)}"></video>` : ''}
     ${p.shared ? `<div class="shared-box">${sharedHTML(p.shared)}</div>` : ''}
     <div class="post-counts">
-      <span>👍❤️ ${p.likeCount}</span>
+      <span><span class="like-badge">${icon('like', 14)}</span> <span class="like-count">${p.likeCount}</span></span>
       <span class="right-counts">${comments.length} comments</span>
     </div>
     <hr>
     <div class="post-actions">
-      <button class="${p.likedByMe ? 'liked' : ''}" onclick="toggleLikeUI('${p.id}')">👍 Like</button>
-      <button onclick="focusComment('${p.id}')">💬 Comment</button>
-      <button onclick="sharePostUI('${p.id}')">↗ Share</button>
+      <button class="${p.likedByMe ? 'liked' : ''}" onclick="toggleLikeUI('${p.id}')">${icon('like', 20)}<span>Like</span></button>
+      <button onclick="focusComment('${p.id}')">${icon('comment', 20)}<span>Comment</span></button>
+      <button onclick="sharePostUI('${p.id}')">${icon('share', 20)}<span>Share</span></button>
     </div>
     <hr>
     <div class="comments" id="comments_${p.id}">
@@ -506,11 +547,14 @@ async function toggleLikeUI(pid) {
     p.likeCount += p.likedByMe ? 1 : -1;
     const card = $('#post_' + pid);
     if (card) {
-      card.querySelector('.post-actions button').classList.toggle('liked', p.likedByMe);
-      card.querySelector('.post-counts span').textContent = `👍❤️ ${p.likeCount}`;
+      const btn = card.querySelector('.post-actions button');
+      if (btn) btn.classList.toggle('liked', p.likedByMe);
+      const cnt = card.querySelector('.like-count');
+      if (cnt) cnt.textContent = p.likeCount;
     }
   } catch (e) { err(e); }
 }
+
 async function addCommentUI(pid) {
   const inp = $('#cin_' + pid); const text = inp.value.trim(); if (!text) return;
   const p = POST_CACHE[pid]; if (!p) return;
@@ -530,8 +574,12 @@ function refreshComments(pid) {
   box.innerHTML = comments.slice(-3).map(commentHTML).join('') +
     (comments.length > 3 ? `<button class="more-c" onclick="showAllComments('${pid}')">View all ${comments.length} comments</button>` : '');
   const card = $('#post_' + pid);
-  if (card) card.querySelector('.right-counts').textContent = `${comments.length} comments`;
+  if (card) {
+    const rc = card.querySelector('.right-counts');
+    if (rc) rc.textContent = `${comments.length} comments`;
+  }
 }
+
 async function showAllComments(pid) {
   const p = POST_CACHE[pid]; if (!p) return;
   $('#comments_' + pid).innerHTML = (p.comments || []).map(commentHTML).join('');
@@ -557,21 +605,29 @@ function toggleMenu(e, id) {
     html = `<div class="menu" style="top:${r.bottom + 6}px;right:${window.innerWidth - r.right}px">
       <button onclick="openProfile('${ME.id}')">${pav(ME, 32)}<span><b>${esc(ME.name)}</b><br><span class="muted">See your profile</span></span></button>
       <hr>
-      <button onclick="toggleDark()">🌙 Dark mode: ${S.dark ? 'On' : 'Off'}</button>
-      ${ME.is_admin ? `<button onclick="location.href='admin.html'">🛠️ Admin Panel</button>` : ''}
-      <button onclick="logout()">🚪 Log out</button>
+      <button onclick="toggleDark()">${icon('moon', 20)}<span>Dark mode: ${S.dark ? 'On' : 'Off'}</span></button>
+      ${ME.is_admin ? `<button onclick="location.href='admin.html'">${icon('shield', 20)}<span>Admin Panel</span></button>` : ''}
+      <button onclick="logout()">${icon('logout', 20)}<span>Log out</span></button>
     </div>`;
   } else if (id.startsWith('post_')) {
     const pid = id.slice(5); const p = POST_CACHE[pid];
     const mine = p && p.author_id === ME.id;
     html = `<div class="menu" style="top:${r.bottom + 4}px;right:${window.innerWidth - r.right}px;min-width:200px">
-      ${mine ? `<button onclick="deletePostUI('${pid}')">🗑️ Delete post</button>` : ''}
-      <button onclick="openReport('${pid}')">🚩 Report post</button>
-      <button onclick="toast('Saved (demo)')">🔖 Save post</button>
+      ${mine ? `<button onclick="deletePostUI('${pid}')">${icon('trash', 20)}<span>Delete post</span></button>` : ''}
+      <button onclick="openReport('${pid}')">${icon('flag', 20)}<span>Report post</span></button>
+      <button onclick="toggleSaveUI('${pid}')">${icon('bookmark', 20)}<span>Save post</span></button>
     </div>`;
   }
   dd.innerHTML = html;
 }
+async function toggleSaveUI(pid) {
+  $('#dropdown').innerHTML = ''; S.openMenu = null;
+  try {
+    const saved = await toggleSave(pid);
+    toast(saved ? 'Saved to your items.' : 'Removed from saved items.');
+  } catch (e) { err(e); }
+}
+
 function toggleDark() {
   S.dark = !S.dark;
   try { localStorage.setItem('fbclone_dark', S.dark ? '1' : '0'); } catch (e) {}
@@ -599,9 +655,12 @@ async function submitReport(pid) {
 /* ---------------- Composer ---------------- */
 const BG_SWATCHES = ['', 'bg-blue', 'bg-purple', 'bg-green', 'bg-orange', 'bg-teal', 'bg-pink'];
 function openComposer() {
+  if (S.view !== 'group') S.composerGroup = null;
   S.composerBg = '';
-  openModal(`<h3>Create post</h3>
-    <div class="composer-user">${pav(ME, 40)}<div><b>${esc(ME.name)}</b><div class="muted">🌐 Public</div></div></div>
+  const f = S.composerFeeling;
+  openModal(`<h3>${S.composerGroup ? 'Post in group' : 'Create post'}</h3>
+    <div class="composer-user">${pav(ME, 40)}<div><b>${esc(ME.name)}</b><div class="muted">${icon('globe', 12)} Public</div></div>
+    ${f ? `<span class="feel-chip">${f.emoji} feeling ${esc(f.label)} <button onclick="clearFeeling()" title="Remove">✕</button></span>` : ''}</div>
     <textarea id="cp_text" class="cp-text" placeholder="What's on your mind, ${esc(ME.name.split(' ')[0])}?" rows="4"></textarea>
     <div class="swatches" id="cp_sw">${BG_SWATCHES.map(b => `<button class="sw ${b} ${b === '' ? 'sw-none sel' : ''}" onclick="pickBg('${b}',this)"></button>`).join('')}</div>
     <label class="lbl">Photo (optional)</label>
@@ -627,9 +686,592 @@ async function submitPost() {
   try {
     let image_url = imgUrl || null;
     if (file) { btn.textContent = 'Uploading...'; image_url = await uploadImage(file); }
-    await createPost({ text, image_url, bg: S.composerBg || null });
-    closeModal(); window.scrollTo(0, 0); toast('Posted!');
+    const feeling = S.composerFeeling ? `${S.composerFeeling.label} ${S.composerFeeling.emoji}` : null;
+    await createPost({ text, image_url, bg: S.composerBg || null, feeling, group_id: S.composerGroup || null });
+    S.composerFeeling = null; S.composerGroup = null;
+    closeModal(); window.scrollTo(0, 0);
+    refreshFeedSoon(); toast('Posted!');
   } catch (e) { err(e); btn.disabled = false; btn.textContent = 'Post'; }
+}
+
+/* ---------------- Feelings ---------------- */
+const FEELINGS = [
+  ['happy', '😊'], ['in love', '😍'], ['celebrating', '🎉'], ['motivated', '💪'],
+  ['sad', '😢'], ['angry', '😡'], ['sick', '🤒'], ['tired', '😴'],
+];
+function openFeelingPicker() {
+  openModal(`<h3>How are you feeling?</h3>
+    <div class="feel-grid">${FEELINGS.map(([l, e]) => `<button class="feel" onclick="pickFeeling('${l}','${e}')"><span>${e}</span>${l}</button>`).join('')}
+    <button class="feel" onclick="pickFeeling('','')">✕<span>None</span></button></div>`);
+}
+function pickFeeling(label, emoji) {
+  S.composerFeeling = label ? { label, emoji } : null;
+  closeModal(); openComposer();
+}
+function clearFeeling() { S.composerFeeling = null; openComposer(); }
+
+/* ---------------- Video recorder ---------------- */
+let REC = null;
+function openVideoRecorder() {
+  openModal(`<h3>Record video</h3><p class="muted" style="text-align:center;margin:-6px 0 10px">Up to 30 seconds — posts to your timeline & Watch</p>
+    <video id="recPreview" autoplay muted playsinline style="width:100%;border-radius:10px;background:#000;aspect-ratio:4/5;max-height:52vh;object-fit:cover"></video>
+    <div class="modal-actions" style="justify-content:center;margin-top:12px">
+      <button class="btn-ghost" onclick="closeRecorder()">Cancel</button>
+      <button class="btn-primary" id="recBtn" onclick="toggleRecording()">● Start recording</button>
+    </div>
+    <div id="recDone" style="display:none;text-align:center;margin-top:10px">
+      <button class="btn-primary" onclick="postRecordedVideo()">Post video</button>
+    </div>`);
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { toast('Camera not supported on this device.'); return; }
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: true })
+    .then(stream => {
+      REC = { stream, chunks: [], rec: null, blob: null };
+      const v = $('#recPreview'); if (v) v.srcObject = stream;
+    })
+    .catch(() => toast('Camera not available. Please allow camera access.'));
+}
+function toggleRecording() {
+  if (!REC || !REC.stream) return;
+  if (REC.rec && REC.rec.state === 'recording') {
+    try { REC.rec.stop(); } catch (e) {}
+    const b = $('#recBtn'); if (b) b.textContent = '● Start recording';
+    return;
+  }
+  REC.chunks = [];
+  const mr = new MediaRecorder(REC.stream);
+  REC.rec = mr;
+  mr.ondataavailable = e => { if (e.data && e.data.size) REC.chunks.push(e.data); };
+  mr.onstop = () => {
+    const blob = new Blob(REC.chunks, { type: mr.mimeType || 'video/webm' });
+    REC.blob = blob;
+    const v = $('#recPreview');
+    if (v) { v.srcObject = null; v.muted = false; v.controls = true; v.src = URL.createObjectURL(blob); }
+    const d = $('#recDone'); if (d) d.style.display = 'block';
+    const b = $('#recBtn'); if (b) b.style.display = 'none';
+  };
+  try { mr.start(); } catch (e) { toast('Recording failed.'); return; }
+  const b = $('#recBtn'); if (b) b.textContent = '■ Stop';
+  clearTimeout(REC._t);
+  REC._t = setTimeout(() => { if (REC.rec && REC.rec.state === 'recording') toggleRecording(); }, 30000);
+}
+function closeRecorder() {
+  if (REC) {
+    clearTimeout(REC._t);
+    try { if (REC.rec && REC.rec.state === 'recording') REC.rec.stop(); } catch (e) {}
+    try { REC.stream.getTracks().forEach(t => t.stop()); } catch (e) {}
+    REC = null;
+  }
+  closeModal();
+}
+async function postRecordedVideo() {
+  if (!REC || !REC.blob) return;
+  const stream = REC.stream;
+  closeModal();
+  toast('Uploading video...');
+  try {
+    const file = new File([REC.blob], 'video_' + Date.now() + '.webm', { type: REC.blob.type || 'video/webm' });
+    const url = await uploadToMedia(file, 'video');
+    await createPost({ text: '', video_url: url });
+    try { stream.getTracks().forEach(t => t.stop()); } catch (e) {}
+    REC = null;
+    S.view = 'home'; renderApp(); window.scrollTo(0, 0); toast('Video posted! 🎬');
+  } catch (e) { err(e); }
+}
+
+/* ---------------- Messenger (realtime 1-1 chat) ---------------- */
+S.chats = [];
+
+async function toggleInbox(e) {
+  e.stopPropagation();
+  const dd = $('#dropdown');
+  if (S.openMenu === 'inbox') { dd.innerHTML = ''; S.openMenu = null; return; }
+  S.openMenu = 'inbox';
+  const r = e.currentTarget.getBoundingClientRect();
+  dd.innerHTML = `<div class="menu notif-menu" style="top:${r.bottom + 6}px;right:${Math.max(8, window.innerWidth - r.right - 160)}px;min-width:300px">
+    <div class="notif-head"><b>Chats</b></div>
+    <div id="inboxList"><div class="notif muted">Loading...</div></div></div>`;
+  try {
+    const convs = await getConversations();
+    const list = $('#inboxList');
+    if (!list) return;
+    list.innerHTML = convs.length ? convs.map(c => `
+      <div class="notif ${c.unread ? 'unread' : ''}" onclick="openChatById('${c.id}')">
+        ${pav(c.other, 44)}
+        <div style="flex:1;min-width:0"><b>${esc(c.other.name)}</b>
+          <div class="muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(c.last ? c.last.text.slice(0, 60) : 'Say hello!')}</div></div>
+        ${c.unread ? `<span class="a-pill">${c.unread}</span>` : ''}
+      </div>`).join('')
+      : '<div class="notif muted">No conversations yet.<br>Tap a contact to start chatting!</div>';
+  } catch (err2) {
+    const list = $('#inboxList');
+    if (list) list.innerHTML = '<div class="notif muted">Could not load chats.</div>';
+  }
+}
+
+async function openChatById(cid) {
+  const dd = $('#dropdown');
+  if (dd) dd.innerHTML = '';
+  S.openMenu = null;
+  let ch = S.chats.find(c => c.cid === cid);
+  if (!ch) {
+    const convs = await getConversations().catch(() => []);
+    const conv = convs.find(c => c.id === cid);
+    ch = { cid, other: conv ? conv.other : { name: '?' }, messages: [], channel: null };
+    S.chats.push(ch);
+    while (S.chats.length > 3) {
+      const old = S.chats.shift();
+      if (old.channel) { try { sb.removeChannel(old.channel); } catch (e) {} }
+    }
+  }
+  renderChatDock();
+  try {
+    ch.messages = await getMessages(cid);
+    renderChatDock(); scrollChat(cid);
+    markConvRead(cid).catch(() => {});
+    refreshMsgBadge();
+  } catch (e) { err(e); }
+  subscribeChat(ch);
+}
+
+async function openChat(userId) {
+  if (!userId || userId === ME.id) return;
+  try {
+    const cid = await getOrCreateConversation(userId);
+    await openChatById(cid);
+  } catch (e) { err(e); }
+}
+
+function subscribeChat(ch) {
+  if (ch.channel) return;
+  ch.channel = sb.channel('chat-' + ch.cid)
+    .on('postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${ch.cid}` },
+      (payload) => {
+        const m = payload.new;
+        if (!ch.messages.some(x => x.id === m.id)) {
+          ch.messages.push(m);
+          renderChatDock(); scrollChat(ch.cid);
+          if (m.sender_id !== ME.id) markConvRead(ch.cid).catch(() => {});
+          refreshMsgBadge();
+        }
+      })
+    .subscribe();
+}
+
+function renderChatDock() {
+  let dock = $('#chatDock');
+  if (!dock) {
+    dock = document.createElement('div');
+    dock.id = 'chatDock';
+    document.body.appendChild(dock);
+  }
+  dock.innerHTML = S.chats.map(ch => `
+    <div class="chat-win" id="chat_${ch.cid}">
+      <div class="chat-head" onclick="toggleChatMin('${ch.cid}')">
+        ${pav(ch.other, 32)}<b>${esc(ch.other.name)}</b>
+        <span class="chat-head-x" onclick="event.stopPropagation();closeChat('${ch.cid}')">✕</span>
+      </div>
+      <div class="chat-body" id="chatbody_${ch.cid}">
+        ${(ch.messages || []).map(chatMsgHTML).join('') || '<div class="muted" style="text-align:center;padding:14px;font-size:13px">Say hello! 👋</div>'}
+      </div>
+      <div class="chat-input">
+        <input id="chatin_${ch.cid}" placeholder="Aa" autocomplete="off" onkeydown="if(event.key==='Enter')sendChat('${ch.cid}')">
+        <button onclick="sendChat('${ch.cid}')" title="Send">${icon('send', 18)}</button>
+      </div>
+    </div>`).join('');
+}
+
+function chatMsgHTML(m) {
+  const mine = m.sender_id === ME.id;
+  return `<div class="msg-row ${mine ? 'mine' : ''}"><div class="msg-bubble">${esc(m.text)}</div></div>`;
+}
+
+async function sendChat(cid) {
+  const inp = $('#chatin_' + cid);
+  if (!inp) return;
+  const text = inp.value.trim();
+  if (!text) return;
+  inp.value = '';
+  const ch = S.chats.find(c => c.cid === cid);
+  try {
+    const m = await sendMessage(cid, text);
+    if (ch && !ch.messages.some(x => x.id === m.id)) {
+      ch.messages.push(m);
+      renderChatDock(); scrollChat(cid);
+    }
+  } catch (e) { err(e); }
+}
+
+function scrollChat(cid) {
+  const b = $('#chatbody_' + cid);
+  if (b) b.scrollTop = b.scrollHeight;
+}
+
+function closeChat(cid) {
+  const i = S.chats.findIndex(c => c.cid === cid);
+  if (i >= 0) {
+    const [ch] = S.chats.splice(i, 1);
+    if (ch.channel) { try { sb.removeChannel(ch.channel); } catch (e) {} }
+  }
+  renderChatDock();
+}
+
+function toggleChatMin(cid) {
+  const w = $('#chat_' + cid);
+  if (w) w.classList.toggle('min');
+}
+
+async function refreshMsgBadge() {
+  try {
+    const convs = await getConversations();
+    const n = convs.reduce((a, c) => a + (c.unread || 0), 0);
+    const b = $('#msgBadge');
+    if (b) {
+      b.textContent = n > 9 ? '9+' : n;
+      b.style.display = n ? 'flex' : 'none';
+    }
+  } catch (e) { /* ignore */ }
+}
+
+/* ---------------- Watch (video feed) ---------------- */
+async function watchHTML() {
+  const posts = await getVideoPosts();
+  cachePosts(posts);
+  if (!posts.length) {
+    return `<div class="card empty">${icon('video', 44)}<br><br><b>No videos yet</b><br><span class="muted">Record one from the home composer!</span><br><br><button class="btn-primary" onclick="goHome()">Back home</button></div>`;
+  }
+  return `<div class="page-head card"><h2>${icon('video', 22)} Watch</h2><span class="muted">${posts.length} videos</span></div>` +
+    posts.map(p => {
+      const a = p.author || { name: '?' };
+      return `<div class="post card" id="post_${p.id}">
+        <div class="post-head">
+          <span onclick="openProfile('${a.id || ''}')" class="clickable">${pav(a, 40)}</span>
+          <div class="post-meta">
+            <div class="post-name" onclick="openProfile('${a.id || ''}')">${esc(a.name)}</div>
+            <div class="post-time">${timeAgo(p.created_at)} · ${icon('globe', 12)}</div>
+          </div>
+        </div>
+        ${p.text ? `<div class="post-text">${esc(p.text)}</div>` : ''}
+        <video class="watch-video" controls preload="metadata" playsinline src="${esc(p.video_url)}"></video>
+        <div class="post-actions">
+          <button class="${p.likedByMe ? 'liked' : ''}" onclick="toggleLikeUI('${p.id}')">${icon('like', 20)}<span class="like-count">${p.likeCount || ''}</span></button>
+          <button onclick="focusComment('${p.id}')">${icon('comment', 20)}<span>${(p.comments || []).length || ''}</span></button>
+          <button onclick="sharePostUI('${p.id}')">${icon('share', 20)}</button>
+        </div>
+        <div class="comments" id="comments_${p.id}">${(p.comments || []).slice(-2).map(commentHTML).join('')}</div>
+        <div class="add-comment">${pav(ME, 32)}<input id="cin_${p.id}" placeholder="Write a comment..." onkeydown="if(event.key==='Enter')addCommentUI('${p.id}')"></div>
+      </div>`;
+    }).join('');
+}
+
+/* ---------------- Marketplace ---------------- */
+async function marketplaceHTML() {
+  const listings = await getListings();
+  S._listings = listings;
+  return `<div class="page-head card"><h2>${icon('store', 22)} Marketplace</h2>
+      <button class="btn-primary" onclick="openListingComposer()">${icon('plus', 18)}<span>Sell something</span></button></div>
+    <div class="market-grid">${listings.map(l => `
+      <div class="listing-card card" onclick="openListingDetail('${l.id}')">
+        ${l.image_url ? `<img src="${esc(l.image_url)}" loading="lazy" alt="">` : `<div class="listing-noimg">${icon('image', 40)}</div>`}
+        <div class="listing-body">
+          <div class="listing-price">৳${Number(l.price).toLocaleString()}</div>
+          <div class="listing-title">${esc(l.title)}</div>
+          <div class="muted" style="display:flex;align-items:center;gap:6px">${pav(l.seller, 20)} ${esc(l.seller.name)}</div>
+        </div>
+      </div>`).join('') || `<div class="card empty">No listings yet.<br><span class="muted">Be the first to sell something!</span></div>`}</div>`;
+}
+
+function openListingComposer() {
+  openModal(`<h3>Sell something</h3>
+    <label class="lbl">Title</label>
+    <input id="li_title" class="inp" placeholder="What are you selling?" maxlength="80">
+    <label class="lbl">Price (৳)</label>
+    <input id="li_price" class="inp" type="number" min="0" placeholder="0">
+    <label class="lbl">Description</label>
+    <textarea id="li_desc" class="cp-text" rows="2" placeholder="Condition, details..."></textarea>
+    <label class="lbl">Photo</label>
+    <input id="li_file" type="file" accept="image/*" class="inp">
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Cancel</button>
+    <button class="btn-primary" id="li_btn" onclick="submitListing()">List item</button></div>`);
+}
+
+async function submitListing() {
+  const title = $('#li_title').value.trim();
+  const price = $('#li_price').value;
+  if (!title) { toast('Add a title.'); return; }
+  const btn = $('#li_btn'); btn.disabled = true; btn.textContent = 'Listing...';
+  try {
+    let image_url = null;
+    const file = $('#li_file').files[0];
+    if (file) { btn.textContent = 'Uploading...'; image_url = await uploadImage(file); }
+    await createListing({ title, price, description: $('#li_desc').value.trim(), image_url });
+    closeModal(); renderView(); toast('Item listed! 🏷️');
+  } catch (e) { err(e); btn.disabled = false; btn.textContent = 'List item'; }
+}
+
+function openListingDetail(id) {
+  const l = (S._listings || []).find(x => x.id === id);
+  if (!l) return;
+  const mine = l.seller_id === ME.id;
+  openModal(`<div class="listing-detail">
+    ${l.image_url ? `<img src="${esc(l.image_url)}" alt="">` : ''}
+    <h3>${esc(l.title)}</h3>
+    <div class="listing-price big">৳${Number(l.price).toLocaleString()}</div>
+    <div class="muted">${esc(l.description || 'No description.')}</div>
+    <div class="seller-row" onclick="closeModal();openProfile('${l.seller_id}')">${pav(l.seller, 36)}<div><b>${esc(l.seller.name)}</b><div class="muted">Seller</div></div></div>
+    <div class="modal-actions">
+      ${mine
+        ? `<button class="btn-ghost" onclick="toggleSoldUI('${l.id}',${l.sold})">${l.sold ? 'Mark available' : 'Mark as sold'}</button>
+           <button class="btn-ghost" onclick="deleteListingUI('${l.id}')">${icon('trash', 16)}<span>Delete</span></button>`
+        : `<button class="btn-primary" onclick="closeModal();openChat('${l.seller_id}')">${icon('chat', 18)}<span>Message seller</span></button>`}
+    </div></div>`);
+}
+
+async function deleteListingUI(id) {
+  if (!confirm('Delete this listing?')) return;
+  try { await deleteListing(id); closeModal(); renderView(); toast('Listing deleted.'); }
+  catch (e) { err(e); }
+}
+
+async function toggleSoldUI(id, sold) {
+  try { await toggleSold(id, sold); closeModal(); renderView(); toast(sold ? 'Marked as available.' : 'Marked as sold.'); }
+  catch (e) { err(e); }
+}
+
+/* ---------------- Events ---------------- */
+async function eventsHTML() {
+  const events = await getEvents();
+  S._events = events;
+  return `<div class="page-head card"><h2>${icon('calendar', 22)} Events</h2>
+      <button class="btn-primary" onclick="openEventComposer()">${icon('plus', 18)}<span>Create event</span></button></div>
+    ${events.map(e => `
+      <div class="card event-card" onclick="openEventDetail('${e.id}')">
+        <div class="event-date"><span>${new Date(e.starts_at).toLocaleDateString(undefined, { month: 'short' }).toUpperCase()}</span><b>${new Date(e.starts_at).getDate()}</b></div>
+        <div style="flex:1;min-width:0"><b>${esc(e.title)}</b>
+          <div class="muted">${esc(e.location || '')} · ${new Date(e.starts_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</div>
+          <div class="muted">${e.counts.going} going · ${e.counts.interested} interested${e.myRsvp ? ` · <b style="color:var(--blue)">You: ${e.myRsvp}</b>` : ''}</div>
+        </div>
+        ${icon('chev', 20)}
+      </div>`).join('') || `<div class="card empty">No upcoming events.<br><span class="muted">Create one and invite the world!</span></div>`}`;
+}
+
+function openEventComposer() {
+  const min = new Date(Date.now() + 3600000).toISOString().slice(0, 16);
+  openModal(`<h3>Create event</h3>
+    <label class="lbl">Event name</label>
+    <input id="ev_title" class="inp" placeholder="Event name" maxlength="80">
+    <label class="lbl">Date & time</label>
+    <input id="ev_when" class="inp" type="datetime-local" min="${min}" value="${min}">
+    <label class="lbl">Location</label>
+    <input id="ev_loc" class="inp" placeholder="Where?">
+    <label class="lbl">Description</label>
+    <textarea id="ev_desc" class="cp-text" rows="2" placeholder="Details..."></textarea>
+    <label class="lbl">Cover photo (optional)</label>
+    <input id="ev_file" type="file" accept="image/*" class="inp">
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Cancel</button>
+    <button class="btn-primary" id="ev_btn" onclick="submitEvent()">Create</button></div>`);
+}
+
+async function submitEvent() {
+  const title = $('#ev_title').value.trim();
+  const when = $('#ev_when').value;
+  if (!title) { toast('Add an event name.'); return; }
+  if (!when) { toast('Pick a date & time.'); return; }
+  const btn = $('#ev_btn'); btn.disabled = true; btn.textContent = 'Creating...';
+  try {
+    let image_url = null;
+    const file = $('#ev_file').files[0];
+    if (file) { btn.textContent = 'Uploading...'; image_url = await uploadImage(file); }
+    await createEvent({ title, description: $('#ev_desc').value.trim(), location: $('#ev_loc').value.trim(), starts_at: new Date(when).toISOString(), image_url });
+    closeModal(); renderView(); toast('Event created! 📅');
+  } catch (e) { err(e); btn.disabled = false; btn.textContent = 'Create'; }
+}
+
+function openEventDetail(id) {
+  const e = (S._events || []).find(x => x.id === id);
+  if (!e) return;
+  const mine = e.creator_id === ME.id;
+  openModal(`<div class="listing-detail">
+    ${e.image_url ? `<img src="${esc(e.image_url)}" alt="">` : ''}
+    <div class="event-date big"><span>${new Date(e.starts_at).toLocaleDateString(undefined, { month: 'short' }).toUpperCase()}</span><b>${new Date(e.starts_at).getDate()}</b></div>
+    <h3>${esc(e.title)}</h3>
+    <div class="muted">${icon('clock', 14)} ${new Date(e.starts_at).toLocaleString(undefined, { dateStyle: 'full', timeStyle: 'short' })}</div>
+    ${e.location ? `<div class="muted">${icon('mappin', 14)} ${esc(e.location)}</div>` : ''}
+    <div class="post-text">${esc(e.description || '')}</div>
+    <div class="muted"><b>${e.counts.going}</b> going · <b>${e.counts.interested}</b> interested</div>
+    <div class="modal-actions" style="justify-content:flex-start">
+      <button class="${e.myRsvp === 'interested' ? 'btn-primary' : 'btn-ghost'}" onclick="rsvpUI('${e.id}','interested')">Interested</button>
+      <button class="${e.myRsvp === 'going' ? 'btn-primary' : 'btn-ghost'}" onclick="rsvpUI('${e.id}','going')">Going</button>
+      ${mine ? `<button class="btn-ghost" onclick="deleteEventUI('${e.id}')" style="margin-left:auto">${icon('trash', 16)}</button>` : ''}
+    </div></div>`);
+}
+
+async function rsvpUI(id, status) {
+  try {
+    await setRsvp(id, status);
+    const e = (S._events || []).find(x => x.id === id);
+    if (e) {
+      if (e.myRsvp && e.myRsvp !== status) e.counts[e.myRsvp]--;
+      if (!e.myRsvp || e.myRsvp !== status) e.counts[status]++;
+      e.myRsvp = status;
+    }
+    openEventDetail(id);
+    if (S.view === 'events') renderView();
+  } catch (e) { err(e); }
+}
+
+async function deleteEventUI(id) {
+  if (!confirm('Delete this event?')) return;
+  try { await deleteEvent(id); closeModal(); renderView(); toast('Event deleted.'); }
+  catch (e) { err(e); }
+}
+
+/* ---------------- Groups ---------------- */
+async function groupsHTML() {
+  const groups = await getGroups();
+  S._groups = groups;
+  const mine = groups.filter(g => g.joined);
+  const discover = groups.filter(g => !g.joined);
+  const card = g => `<div class="card group-card" onclick="openGroup('${g.id}')">
+      <div class="group-cover" ${g.cover_url ? `style="background-image:url('${esc(g.cover_url)}')"` : ''}>${g.cover_url ? '' : icon('users', 36)}</div>
+      <div style="padding:10px 2px 0"><b>${esc(g.name)}</b><div class="muted">${g.memberCount} member${g.memberCount === 1 ? '' : 's'}</div>
+      <button class="${g.joined ? 'btn-ghost' : 'btn-primary'}" style="margin-top:8px;width:100%" onclick="event.stopPropagation();toggleJoinUI('${g.id}',${g.joined})">${g.joined ? '✓ Joined' : '+ Join'}</button></div>
+    </div>`;
+  return `<div class="page-head card"><h2>${icon('users', 22)} Groups</h2>
+      <button class="btn-primary" onclick="openGroupComposer()">${icon('plus', 18)}<span>Create group</span></button></div>
+    <h3 class="sec-h">Your groups</h3>
+    <div class="group-grid">${mine.map(card).join('') || '<div class="muted" style="padding:0 4px">You haven\'t joined any groups yet.</div>'}</div>
+    <h3 class="sec-h">Discover</h3>
+    <div class="group-grid">${discover.map(card).join('') || '<div class="muted" style="padding:0 4px">No other groups yet.</div>'}</div>`;
+}
+
+function openGroupComposer() {
+  openModal(`<h3>Create group</h3>
+    <label class="lbl">Group name</label>
+    <input id="gr_name" class="inp" placeholder="Group name" maxlength="80">
+    <label class="lbl">Description</label>
+    <textarea id="gr_desc" class="cp-text" rows="2" placeholder="What's this group about?"></textarea>
+    <label class="lbl">Cover photo (optional)</label>
+    <input id="gr_file" type="file" accept="image/*" class="inp">
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Cancel</button>
+    <button class="btn-primary" id="gr_btn" onclick="submitGroup()">Create</button></div>`);
+}
+
+async function submitGroup() {
+  const name = $('#gr_name').value.trim();
+  if (!name) { toast('Add a group name.'); return; }
+  const btn = $('#gr_btn'); btn.disabled = true; btn.textContent = 'Creating...';
+  try {
+    let cover_url = null;
+    const file = $('#gr_file').files[0];
+    if (file) { btn.textContent = 'Uploading...'; cover_url = await uploadImage(file); }
+    const g = await createGroup({ name, description: $('#gr_desc').value.trim(), cover_url });
+    closeModal(); openGroup(g.id); toast('Group created! 👪');
+  } catch (e) { err(e); btn.disabled = false; btn.textContent = 'Create'; }
+}
+
+async function toggleJoinUI(groupId, joined) {
+  try {
+    await toggleGroupJoin(groupId, joined);
+    if (S._group && S._group.group.id === groupId) {
+      S._group.joined = !joined;
+      if (!joined) {
+        S._group.members.push({ id: ME.id, name: ME.name, avatar_url: ME.avatar_url, bio: ME.bio });
+      } else {
+        S._group.members = S._group.members.filter(m => m.id !== ME.id);
+      }
+    }
+    renderView();
+    toast(joined ? 'Left the group.' : 'Joined the group!');
+  } catch (e) { err(e); }
+}
+
+async function deleteGroupUI(id) {
+  if (!confirm('Delete this group and all its posts?')) return;
+  try { await deleteGroup(id); goGroups(); toast('Group deleted.'); }
+  catch (e) { err(e); }
+}
+
+function setGroupTab(t) {
+  S.groupTab = t;
+  $$('.ptab').forEach(b => b.classList.toggle('active', b.textContent.toLowerCase() === t));
+  groupTabHTML().then(html => { $('#groupTabContent').innerHTML = html; }).catch(err);
+}
+
+async function groupHTML() {
+  const { group, members, posts, joined } = await getGroupPage(S.groupId);
+  cachePosts(posts);
+  S._group = { group, members, posts, joined };
+  return `<div class="card profile-top">
+    <div class="cover" ${group.cover_url ? `style="background-image:url('${esc(group.cover_url)}')"` : ''}></div>
+    <div class="profile-row">
+      <div class="profile-info"><h2>${esc(group.name)}</h2>
+        <div class="muted">${icon('users', 14)} ${members.length} member${members.length === 1 ? '' : 's'}</div>
+        <div class="muted">${esc(group.description || '')}</div>
+      </div>
+      <div class="profile-btns">
+        ${joined ? `<button class="btn-ghost" onclick="toggleJoinUI('${group.id}',true)">✓ Joined</button>`
+          : `<button class="btn-primary" onclick="toggleJoinUI('${group.id}',false)">+ Join group</button>`}
+        ${(group.creator_id === ME.id || ME.is_admin) ? `<button class="btn-ghost" onclick="deleteGroupUI('${group.id}')" title="Delete group">${icon('trash', 16)}</button>` : ''}
+      </div>
+    </div>
+    <div class="profile-tabs">${['discussion', 'about', 'members'].map(t =>
+      `<button class="ptab ${S.groupTab === t ? 'active' : ''}" onclick="setGroupTab('${t}')">${t[0].toUpperCase() + t.slice(1)}</button>`).join('')}</div>
+  </div>
+  <div id="groupTabContent">${await groupTabHTML()}</div>`;
+}
+
+async function groupTabHTML() {
+  const { group, members, posts, joined } = S._group;
+  if (S.groupTab === 'about') {
+    return `<div class="card"><div class="posts-head"><h3>About this group</h3></div>
+      <div class="post-text">${esc(group.description || 'No description yet.')}</div>
+      <div class="muted">Created ${new Date(group.created_at).toLocaleDateString(undefined, { dateStyle: 'long' })}</div></div>`;
+  }
+  if (S.groupTab === 'members') {
+    return `<div class="card"><div class="posts-head"><h3>Members</h3><span class="muted">${members.length}</span></div>
+      <div class="people-grid">${members.map(u => `<div class="person" onclick="openProfile('${u.id}')" style="cursor:pointer">${pav(u, 64)}<b>${esc(u.name)}</b><div class="muted">${esc(u.bio || '')}</div></div>`).join('')}</div></div>`;
+  }
+  return `${joined ? `<div class="card"><div class="composer-top" onclick="openGroupComposerPost()">${pav(ME, 40)}<div class="composer-fake">Write something in ${esc(group.name)}...</div></div></div>` : ''}
+    <div id="posts">${postsHTML(posts)}</div>`;
+}
+
+function openGroupComposerPost() {
+  S.composerGroup = S.groupId;
+  openComposer();
+}
+
+/* ---------------- Saved ---------------- */
+async function savedHTML() {
+  const posts = await getSavedPosts();
+  cachePosts(posts);
+  return `<div class="page-head card"><h2>${icon('bookmark', 22)} Saved</h2><span class="muted">${posts.length} item${posts.length === 1 ? '' : 's'}</span></div>
+    ${posts.length ? postsHTML(posts) : `<div class="card empty">${icon('bookmark', 44)}<br><br><b>Nothing saved yet</b><br><span class="muted">Tap the ⋯ menu on any post, then "Save post".</span></div>`}`;
+}
+
+/* ---------------- Memories ---------------- */
+async function memoriesHTML() {
+  const posts = await getMemories();
+  cachePosts(posts);
+  if (!posts.length) {
+    return `<div class="card empty">${icon('clock', 44)}<br><br><b>No memories today</b><br><span class="muted">Posts you shared on this date in past years will appear here.</span></div>`;
+  }
+  const byYear = {};
+  posts.forEach(p => {
+    const y = new Date(p.created_at).getFullYear();
+    (byYear[y] = byYear[y] || []).push(p);
+  });
+  const nowY = new Date().getFullYear();
+  return `<div class="page-head card"><h2>${icon('clock', 22)} Memories</h2><span class="muted">On this day</span></div>` +
+    Object.keys(byYear).sort((a, b) => b - a).map(y => {
+      const ago = nowY - y;
+      return `<div class="card"><div class="posts-head"><h3>${y}</h3><span class="muted">${ago} year${ago > 1 ? 's' : ''} ago</span></div></div>${postsHTML(byYear[y])}`;
+    }).join('');
+}
+
+/* ---------------- Feeds (chronological) ---------------- */
+function feedsHTML() {
+  return composerHTML() + `<div id="posts"><div class="card empty">Loading...</div></div>`;
 }
 
 /* ---------------- Profile ---------------- */
@@ -665,7 +1307,7 @@ async function profileHTML(uidv) {
           ? `<button class="btn-primary" onclick="openStoryComposer()">⊕ Add to story</button>
              <button class="btn-ghost" onclick="editProfile()">✏️ Edit profile</button>`
           : `<button class="${following ? 'btn-ghost' : 'btn-primary'}" id="followBtn" onclick="toggleFollowUI('${u.id}')">${following ? '✓ Following' : '+ Follow'}</button>
-             <button class="btn-ghost" onclick="toast('Messenger is decorative in this demo')">💬 Message</button>`}
+             <button class="btn-ghost" onclick="openChat('${u.id}')">${icon('chat', 18)}<span>Message</span></button>`}
       </div>
     </div>
     <div class="profile-tabs">

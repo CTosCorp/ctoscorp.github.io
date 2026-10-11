@@ -253,3 +253,98 @@ div.thought-bubble[onclick] { cursor: pointer; }
 .sv-right { right: 0; width: 70%; }
 .story-text-prev { position: absolute; top: 50%; left: 10px; right: 10px; transform: translateY(-50%); color: #fff; font-size: 13px; font-weight: 700; text-align: center; text-shadow: 0 1px 3px rgba(0,0,0,.6); line-height: 1.35; }
 .story .story-top img { display: block; }
+
+/* ---------- professional icon chrome ---------- */
+.ic { vertical-align: -4px; flex-shrink: 0; }
+.tb-tab { display: flex; align-items: center; justify-content: center; }
+.tb-ico { position: relative; display: flex; align-items: center; justify-content: center; }
+.nav-ico { display: flex; align-items: center; justify-content: center; width: 32px; color: var(--muted); }
+.nav-item.active .nav-ico { color: var(--blue); }
+.nav-item.active { color: var(--blue); }
+.post-actions button { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.post-actions button .ic { vertical-align: 0; }
+.post-menu-btn { display: flex; align-items: center; justify-content: center; }
+.like-badge { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: var(--blue); color: #fff; vertical-align: -5px; margin-right: 2px; }
+.like-badge .ic { vertical-align: 0; }
+.feeling { color: var(--muted); font-weight: 400; font-size: 14px; }
+.post-video { width: 100%; max-height: 60vh; background: #000; display: block; }
+.composer-actions button { display: flex; align-items: center; gap: 6px; }
+
+/* live dot: pulsing green dot */
+.live-dot { width: 10px; height: 10px; border-radius: 50%; background: #31A24C; animation: pulse 2s infinite; font-size: 0; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
+
+/* ---------- page headers ---------- */
+.page-head { display: flex; align-items: center; justify-content: space-between; }
+.page-head h2 { display: flex; align-items: center; gap: 10px; font-size: 20px; margin: 0; }
+.page-head .btn-primary { display: inline-flex; align-items: center; gap: 6px; }
+.sec-h { font-size: 17px; margin: 18px 4px 10px; }
+
+/* ---------- messenger chat ---------- */
+#chatDock { position: fixed; right: 16px; bottom: 0; display: flex; gap: 12px; z-index: 300; align-items: flex-end; }
+.chat-win { width: 300px; background: var(--card); border-radius: 12px 12px 0 0; box-shadow: 0 -2px 24px rgba(0,0,0,.25); display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--border); border-bottom: none; }
+.chat-win.min .chat-body, .chat-win.min .chat-input { display: none; }
+.chat-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: var(--card); border-bottom: 1px solid var(--border); cursor: pointer; font-size: 14px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+.chat-head b { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chat-head-x { background: none; border: none; color: var(--muted); font-size: 14px; padding: 4px 6px; border-radius: 6px; }
+.chat-head-x:hover { background: var(--hover); }
+.chat-body { height: 300px; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 6px; background: var(--bg); }
+.msg-row { display: flex; }
+.msg-row.mine { justify-content: flex-end; }
+.msg-bubble { max-width: 78%; padding: 8px 12px; border-radius: 16px; font-size: 14px; line-height: 1.35; word-break: break-word; background: var(--input); color: var(--text); }
+.msg-row.mine .msg-bubble { background: var(--blue); color: #fff; border-bottom-right-radius: 4px; }
+.msg-row:not(.mine) .msg-bubble { border-bottom-left-radius: 4px; }
+.chat-input { display: flex; align-items: center; gap: 6px; padding: 8px; border-top: 1px solid var(--border); background: var(--card); }
+.chat-input input { flex: 1; border: none; background: var(--input); border-radius: 18px; padding: 9px 14px; font-size: 14px; color: var(--text); outline: none; }
+.chat-input button { background: none; border: none; color: var(--blue); padding: 8px; border-radius: 50%; display: flex; }
+.chat-input button:hover { background: var(--hover); }
+
+/* ---------- watch ---------- */
+.watch-video { width: calc(100% + 32px); margin: 8px -16px 0; max-height: 62vh; background: #000; display: block; }
+
+/* ---------- marketplace ---------- */
+.market-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; }
+.listing-card { padding: 0; overflow: hidden; cursor: pointer; transition: transform .15s; }
+.listing-card:hover { transform: translateY(-2px); }
+.listing-card img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; }
+.listing-noimg { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; background: var(--input); color: var(--muted); }
+.listing-body { padding: 10px 12px 14px; }
+.listing-price { font-weight: 800; font-size: 17px; }
+.listing-price.big { font-size: 24px; margin: 4px 0 8px; }
+.listing-title { font-size: 14px; margin: 2px 0 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.listing-detail img { width: 100%; max-height: 46vh; object-fit: cover; border-radius: 10px; margin-bottom: 10px; }
+.seller-row { display: flex; align-items: center; gap: 10px; margin: 12px 0; padding: 10px; background: var(--input); border-radius: 10px; cursor: pointer; }
+
+/* ---------- events ---------- */
+.event-card { display: flex; align-items: center; gap: 14px; cursor: pointer; }
+.event-card:hover { background: var(--hover); }
+.event-date { width: 56px; height: 62px; border-radius: 10px; background: var(--input); display: flex; flex-direction: column; align-items: center; justify-content: center; flex-shrink: 0; }
+.event-date span { font-size: 11px; font-weight: 800; color: #E41E3F; }
+.event-date b { font-size: 22px; }
+.event-date.big { width: 72px; height: 78px; margin-bottom: 10px; }
+.event-date.big b { font-size: 30px; }
+
+/* ---------- groups ---------- */
+.group-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
+.group-card { cursor: pointer; padding: 0 0 12px; overflow: hidden; }
+.group-card:hover { transform: translateY(-2px); }
+.group-cover { height: 110px; background: linear-gradient(135deg, var(--blue), #8b5cf6); background-size: cover; background-position: center; display: flex; align-items: center; justify-content: center; color: rgba(255,255,255,.85); }
+.group-card > div:last-child { padding: 10px 12px 0; }
+
+/* ---------- feelings ---------- */
+.feel-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px; }
+.feel { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 14px 8px; background: var(--input); border: none; border-radius: 12px; font-size: 14px; color: var(--text); }
+.feel span:first-child, .feel { font-size: 28px; }
+.feel span:last-child { font-size: 13px; }
+.feel:hover { background: var(--hover); }
+.feel-chip { display: inline-flex; align-items: center; gap: 6px; background: var(--input); border-radius: 16px; padding: 5px 8px 5px 12px; font-size: 13px; margin-left: 10px; }
+.feel-chip button { background: none; border: none; color: var(--muted); font-size: 13px; }
+
+/* ---------- responsive ---------- */
+@media (max-width: 720px) {
+  #chatDock { right: 8px; left: 8px; justify-content: flex-end; }
+  .chat-win { width: min(300px, 86vw); }
+  .market-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .group-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .tb-tab { padding: 8px 18px; }
+}
