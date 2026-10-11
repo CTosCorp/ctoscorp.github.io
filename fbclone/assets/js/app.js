@@ -346,10 +346,6 @@ async function loadRightBar() {
     const el = $('#rightBar');
     if (!el) return;
     el.innerHTML = `
-      <div class="side-sec"><div class="side-title">Sponsored</div>
-        <div class="spon"><div class="spon-img g1"></div><div><b>Daraz 11.11 Sale</b><div class="muted">daraz.com.bd</div></div></div>
-        <div class="spon"><div class="spon-img g2"></div><div><b>Learn coding free</b><div class="muted">freecodecamp.org</div></div></div>
-      </div><hr>
       <div class="side-sec"><div class="side-title">Contacts · ${others.length}</div>
         ${others.slice(0, 14).map(u => `
           <button class="contact" onclick="openChat('${u.id}')">

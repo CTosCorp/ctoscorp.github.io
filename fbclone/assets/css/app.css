@@ -74,9 +74,6 @@ a { color: var(--blue); text-decoration: none; }
 .side-title { color: var(--muted); font-weight: 700; font-size: 15px; padding: 8px 6px; }
 .side-sec { padding: 4px; }
 .side hr, .card hr, .post hr { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
-.spon { display: flex; gap: 10px; align-items: center; padding: 8px 6px; border-radius: 8px; font-size: 14px; }
-.spon:hover { background: var(--hover); }
-.spon-img { width: 100px; height: 100px; border-radius: 8px; flex-shrink: 0; }
 .g1 { background: linear-gradient(135deg, #FF6B6B, #FFE66D); }
 .g2 { background: linear-gradient(135deg, #4ECDC4, #556270); }
 .contact { display: flex; align-items: center; gap: 10px; width: 100%; background: none; border: none; padding: 7px 8px; border-radius: 8px; font-size: 14px; font-weight: 600; color: var(--text); text-align: left; }
