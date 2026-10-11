@@ -508,7 +508,7 @@ function composerHTML() {
     </div>
     <hr>
     <div class="composer-actions">
-      <button onclick="openVideoRecorder()">${icon('videocam', 20)}<span>Video</span></button>
+      <button onclick="openVideoUpload()">${icon('videocam', 20)}<span>Reel</span></button>
       <button onclick="openComposer()">${icon('image', 20)}<span>Photo</span></button>
       <button onclick="openFeelingPicker()">${icon('smile', 20)}<span>Feeling</span></button>
     </div>
@@ -1029,71 +1029,73 @@ function pickFeeling(label, emoji) {
 function clearFeeling() { S.composerFeeling = null; openComposer(); }
 
 /* ---------------- Video recorder ---------------- */
-let REC = null;
-function openVideoRecorder() {
-  openModal(`<h3>Record video</h3><p class="muted" style="text-align:center;margin:-6px 0 10px">Up to 30 seconds — posts to your timeline & Watch</p>
-    <video id="recPreview" autoplay muted playsinline style="width:100%;border-radius:10px;background:#000;aspect-ratio:4/5;max-height:52vh;object-fit:cover"></video>
-    <div class="modal-actions" style="justify-content:center;margin-top:12px">
-      <button class="btn-ghost" onclick="closeRecorder()">Cancel</button>
-      <button class="btn-primary" id="recBtn" onclick="toggleRecording()">● Start recording</button>
+/* ----- Reel upload: pick from gallery -> preview -> caption -> upload (no in-app recording) ----- */
+let VU = null;
+function openVideoUpload() {
+  if (VU && VU.url) { try { URL.revokeObjectURL(VU.url); } catch (e) {} }
+  VU = null;
+  openModal(`<h3>Upload reel</h3><p class="muted" style="text-align:center;margin:-6px 0 10px">Pick a video from your gallery</p>
+    <div id="vuPick">
+      <label class="vu-drop">
+        <input type="file" id="vuFile" accept="video/*" style="display:none" onchange="previewPickedVideo(this)">
+        <span class="vu-drop-ico">\u{1F3AC}</span>
+        <span><b>Choose video</b></span>
+        <span class="muted">from your gallery</span>
+      </label>
     </div>
-    <div id="recDone" style="display:none;text-align:center;margin-top:10px">
-      <button class="btn-primary" onclick="postRecordedVideo()">Post video</button>
+    <div id="vuEdit" style="display:none">
+      <video id="vuPreview" controls playsinline preload="metadata" style="width:100%;border-radius:10px;background:#000;aspect-ratio:4/5;max-height:44vh"></video>
+      <label class="lbl">Caption</label>
+      <textarea id="vuCaption" class="inp" rows="2" placeholder="Write a caption..."></textarea>
+      <div class="muted" id="vuInfo" style="margin:6px 0;font-size:13px"></div>
+      <div class="modal-actions" style="justify-content:center;margin-top:12px">
+        <button class="btn-ghost" onclick="resetVideoPick()">Change video</button>
+        <button class="btn-primary" id="vuPost" onclick="postPickedVideo()">Upload reel</button>
+      </div>
     </div>`);
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { toast('Camera not supported on this device.'); return; }
-  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: true })
-    .then(stream => {
-      REC = { stream, chunks: [], rec: null, blob: null };
-      const v = $('#recPreview'); if (v) v.srcObject = stream;
-    })
-    .catch(() => toast('Camera not available. Please allow camera access.'));
 }
-function toggleRecording() {
-  if (!REC || !REC.stream) return;
-  if (REC.rec && REC.rec.state === 'recording') {
-    try { REC.rec.stop(); } catch (e) {}
-    const b = $('#recBtn'); if (b) b.textContent = '● Start recording';
-    return;
+function previewPickedVideo(input) {
+  const f = input.files && input.files[0];
+  if (!f) return;
+  if (VU && VU.url) { try { URL.revokeObjectURL(VU.url); } catch (e) {} }
+  VU = { file: f, url: URL.createObjectURL(f) };
+  $('#vuPick').style.display = 'none';
+  $('#vuEdit').style.display = 'block';
+  const v = $('#vuPreview');
+  const mb = (f.size / 1048576).toFixed(1);
+  const info = $('#vuInfo');
+  if (info) info.textContent = `${f.name} · ${mb} MB`;
+  if (v) {
+    v.src = VU.url;
+    v.onloadedmetadata = () => {
+      if (info && v.duration && isFinite(v.duration)) {
+        const d = Math.round(v.duration);
+        info.textContent = `${f.name} · ${mb} MB · ${d}s`;
+      }
+    };
   }
-  REC.chunks = [];
-  const mr = new MediaRecorder(REC.stream);
-  REC.rec = mr;
-  mr.ondataavailable = e => { if (e.data && e.data.size) REC.chunks.push(e.data); };
-  mr.onstop = () => {
-    const blob = new Blob(REC.chunks, { type: mr.mimeType || 'video/webm' });
-    REC.blob = blob;
-    const v = $('#recPreview');
-    if (v) { v.srcObject = null; v.muted = false; v.controls = true; v.src = URL.createObjectURL(blob); }
-    const d = $('#recDone'); if (d) d.style.display = 'block';
-    const b = $('#recBtn'); if (b) b.style.display = 'none';
-  };
-  try { mr.start(); } catch (e) { toast('Recording failed.'); return; }
-  const b = $('#recBtn'); if (b) b.textContent = '■ Stop';
-  clearTimeout(REC._t);
-  REC._t = setTimeout(() => { if (REC.rec && REC.rec.state === 'recording') toggleRecording(); }, 30000);
 }
-function closeRecorder() {
-  if (REC) {
-    clearTimeout(REC._t);
-    try { if (REC.rec && REC.rec.state === 'recording') REC.rec.stop(); } catch (e) {}
-    try { REC.stream.getTracks().forEach(t => t.stop()); } catch (e) {}
-    REC = null;
-  }
-  closeModal();
+function resetVideoPick() {
+  if (VU && VU.url) { try { URL.revokeObjectURL(VU.url); } catch (e) {} }
+  VU = null;
+  const fi = $('#vuFile'); if (fi) fi.value = '';
+  $('#vuEdit').style.display = 'none';
+  $('#vuPick').style.display = 'block';
 }
-async function postRecordedVideo() {
-  if (!REC || !REC.blob) return;
-  const stream = REC.stream;
-  closeModal();
-  toast('Uploading video...');
+async function postPickedVideo() {
+  if (!VU || !VU.file) return;
+  const caption = (($('#vuCaption') || {}).value || '').trim();
+  const btn = $('#vuPost');
+  if (btn) { btn.disabled = true; btn.textContent = 'Uploading...'; }
   try {
-    const file = new File([REC.blob], 'video_' + Date.now() + '.webm', { type: REC.blob.type || 'video/webm' });
-    const url = await uploadToMedia(file, 'video');
-    await createPost({ text: '', video_url: url });
-    try { stream.getTracks().forEach(t => t.stop()); } catch (e) {}
-    REC = null;
-    S.view = 'home'; renderApp(); window.scrollTo(0, 0); toast('Video posted! 🎬');
-  } catch (e) { err(e); }
+    const url = await uploadToMedia(VU.file, 'video');
+    await createPost({ text: caption, video_url: url });
+    if (VU.url) { try { URL.revokeObjectURL(VU.url); } catch (e) {} }
+    VU = null;
+    closeModal();
+    S.view = 'home'; renderApp(); window.scrollTo(0, 0);
+    toast('Reel uploaded!');
+  } catch (e) { err(e); if (btn) { btn.disabled = false; btn.textContent = 'Upload reel'; } }
 }
 
 /* ---------------- Messenger (realtime 1-1 chat) ---------------- */

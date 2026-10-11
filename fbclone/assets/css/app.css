@@ -414,3 +414,13 @@ div.thought-bubble[onclick] { cursor: pointer; }
 /* comment send button */
 .c-send-btn { background: none; border: none; font-size: 22px; color: var(--blue); padding: 4px 8px; line-height: 1; }
 .c-send-btn:active { transform: scale(1.15); }
+
+/* reel upload picker */
+.vu-drop {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  border: 2px dashed var(--border); border-radius: 14px; padding: 44px 20px;
+  cursor: pointer; text-align: center; color: var(--text);
+}
+.vu-drop:hover { border-color: var(--blue); background: var(--hover); }
+.vu-drop-ico { font-size: 44px; }
+#vuCaption { resize: vertical; min-height: 56px; }
