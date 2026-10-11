@@ -537,8 +537,9 @@ function postHTML(p) {
     <div class="comments" id="comments_${p.id}">${commentsSectionHTML(p)}</div>
     <div class="add-comment">
       ${pav(ME, 32)}
-      <input id="cin_${p.id}" placeholder="Write a comment..." onkeydown="if(event.key==='Enter')addCommentUI('${p.id}')">
-      <button class="c-emoji-btn" onclick="openEmojiPicker('cin_${p.id}', this)" title="Emoji">\u{1F60A}</button>
+      <input id="cin_${p.id}" placeholder="Write a comment..." onkeydown="if(event.key==='Enter')addCommentUI('${p.id}')" oninput="cInputUI('${p.id}')">
+      <button class="c-emoji-btn" id="cemoji_${p.id}" onclick="openEmojiPicker('cin_${p.id}', this)" title="Emoji">\u{1F60A}</button>
+      <button class="c-send-btn" id="csend_${p.id}" hidden onclick="addCommentUI('${p.id}')" title="Send">\u27A4</button>
     </div>
   </article>`;
 }
@@ -650,8 +651,9 @@ function replyBoxUI(pid, cid) {
   const nm = esc(((c && c.author && c.author.name) || 'them').split(' ')[0]);
   box.innerHTML = `<div class="add-comment reply-box">
       ${pav(ME, 28)}
-      <input id="rin_${cid}" placeholder="Reply to ${nm}..." onkeydown="if(event.key==='Enter')addReplyUI('${pid}','${cid}')">
-      <button class="c-emoji-btn" onclick="openEmojiPicker('rin_${cid}', this)" title="Emoji">\u{1F60A}</button>
+      <input id="rin_${cid}" placeholder="Reply to ${nm}..." onkeydown="if(event.key==='Enter')addReplyUI('${pid}','${cid}')" oninput="rInputUI('${cid}')">
+      <button class="c-emoji-btn" id="remo_${cid}" onclick="openEmojiPicker('rin_${cid}', this)" title="Emoji">\u{1F60A}</button>
+      <button class="c-send-btn" id="rsend_${cid}" hidden onclick="addReplyUI('${pid}','${cid}')" title="Send">\u27A4</button>
     </div>`;
   box.hidden = false;
   setTimeout(() => { const i = $('#rin_' + cid); if (i) i.focus(); }, 60);
@@ -671,6 +673,18 @@ async function addReplyUI(pid, cid) {
   } catch (e) { err(e); }
   inp.disabled = false;
 }
+function cInputUI(pid) {
+  const i = $('#cin_' + pid), e = $('#cemoji_' + pid), s = $('#csend_' + pid);
+  const has = !!(i && i.value.trim());
+  if (e) e.hidden = has;
+  if (s) s.hidden = !has;
+}
+function rInputUI(cid) {
+  const i = $('#rin_' + cid), e = $('#remo_' + cid), s = $('#rsend_' + cid);
+  const has = !!(i && i.value.trim());
+  if (e) e.hidden = has;
+  if (s) s.hidden = !has;
+}
 async function addCommentUI(pid) {
   const inp = $('#cin_' + pid); const text = inp.value.trim(); if (!text) return;
   const p = POST_CACHE[pid]; if (!p) return;
@@ -681,6 +695,7 @@ async function addCommentUI(pid) {
     c.reactionCounts = {}; c.reactionTotal = 0; c.myReaction = null; c.replies = [];
     p.comments.push(c);
     inp.value = '';
+    cInputUI(pid);
     refreshComments(pid);
   } catch (e) { err(e); }
   inp.disabled = false;
