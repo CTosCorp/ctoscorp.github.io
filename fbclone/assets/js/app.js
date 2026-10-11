@@ -136,6 +136,12 @@ function renderAuth(mode) {
         <hr class="auth-hr">
         ${regOpen ? `<button class="btn-green" onclick="renderAuth('signup')">Create new account</button>`
                   : `<div class="muted" style="text-align:center">Registrations are currently closed.</div>`}
+      ` : (mode === 'verify' ? `
+        <div class="su-title">\u2709\uFE0F Check your email</div>
+        <div class="su-sub">We sent a verification link to<br><b>${esc(S.pendingEmail || '')}</b>.<br>Click the link to activate your account.</div>
+        <div class="muted" style="text-align:center;font-size:13px">Didn't get it? Check spam, or:</div>
+        <button class="btn-ghost" id="rs_btn" onclick="doResend()">Resend verification email</button>
+        <div class="auth-link"><a href="#" onclick="event.preventDefault();renderAuth('login')">Back to log in</a></div>
       ` : `
         <div class="su-title">Sign Up</div>
         <div class="su-sub">It's quick and easy.</div>
@@ -144,7 +150,7 @@ function renderAuth(mode) {
         <input id="su_pass" class="inp" type="password" placeholder="New password" onkeydown="if(event.key==='Enter')doSignup()">
         <button class="btn-green" id="su_btn" onclick="doSignup()">Sign Up</button>
         <div class="auth-link"><a href="#" onclick="event.preventDefault();renderAuth('login')">Already have an account?</a></div>
-      `}
+      `)}
     </div>
   </div>
   <div class="auth-foot"><a href="admin.html">Admin Panel</a> · FaceClone — powered by Supabase</div>`;
@@ -162,10 +168,22 @@ async function doSignup() {
   if (!name || !email || pass.length < 6) { toast('Fill all fields (password min 6 chars).'); return; }
   const btn = $('#su_btn'); btn.disabled = true; btn.textContent = 'Creating...';
   try {
-    await signUp(name, email, pass);
-    S.followingCache = [];
-    renderApp(); toast('Account created. Welcome, ' + name.split(' ')[0] + '!');
+    const res = await signUp(name, email, pass);
+    if (res && res.needsVerification) {
+      S.pendingEmail = email;
+      renderAuth('verify');
+      toast('Verification email sent!');
+    } else {
+      S.followingCache = [];
+      renderApp(); toast('Account created. Welcome, ' + name.split(' ')[0] + '!');
+    }
   } catch (e) { err(e); btn.disabled = false; btn.textContent = 'Sign Up'; }
+}
+async function doResend() {
+  const btn = $('#rs_btn'); if (btn) { btn.disabled = true; btn.textContent = 'Sending...'; }
+  try { await resendVerification(S.pendingEmail); toast('Verification email resent!'); }
+  catch (e) { err(e); }
+  if (btn) { btn.disabled = false; btn.textContent = 'Resend verification email'; }
 }
 async function logout() {
   teardownRealtime();

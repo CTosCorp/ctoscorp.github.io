@@ -23,8 +23,9 @@ async function fetchMyProfile() {
   return data || null;
 }
 async function signUp(name, email, password) {
-  const { error } = await sb.auth.signUp({ email, password, options: { data: { name } } });
+  const { data, error } = await sb.auth.signUp({ email, password, options: { data: { name } } });
   if (error) throw error;
+  if (!data.session) return { needsVerification: true, email };  // confirm-email ON
   for (let i = 0; i < 10; i++) {           // wait for profile trigger
     await new Promise(r => setTimeout(r, 500));
     ME = await fetchMyProfile();
@@ -32,6 +33,10 @@ async function signUp(name, email, password) {
   }
   if (!ME) throw new Error('Profile not created yet — try logging in.');
   return ME;
+}
+async function resendVerification(email) {
+  const { error } = await sb.auth.resend({ type: 'signup', email });
+  if (error) throw error;
 }
 async function signIn(email, password) {
   const { error } = await sb.auth.signInWithPassword({ email, password });
