@@ -121,7 +121,16 @@ async function goTab(id) {
   // realtime: refresh current tab on relevant changes
   const reload = debounce(() => renderTab(true), 900);
   rtChannels.push(onTable('reports', reload));
-  rtChannels.push(onTable('profiles', reload));
+  rtChannels.push(onTable('profiles', (payload) => {
+    const row = (payload && (payload.new || payload.old)) || {};
+    if (row.id && ME && row.id === ME.id && payload.new) {
+      ME.avatar_url = payload.new.avatar_url;
+      ME.name = payload.new.name;
+      const ah = document.querySelector('.a-admin');
+      if (ah) ah.innerHTML = `${pav(ME, 32)}<span>${esc(ME.name)}</span>`;
+    }
+    reload();
+  }));
   rtChannels.push(onTable('posts', reload));
 }
 async function renderTab(soft) {
