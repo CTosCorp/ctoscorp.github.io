@@ -76,7 +76,7 @@ function initials(name) {
 }
 function avatarHTML(name, size, attrs, url) {
   size = size || 40;
-  const dims = `width:${size}px;height:${size}px;`;
+  const dims = `width:${size}px;height:${size}px;position:relative;overflow:hidden;flex-shrink:0;`;
   const fs = Math.round(size * 0.38);
   // initials always rendered underneath; photo (if any) covers them,
   // and removes itself if it fails to load (revealing initials)
