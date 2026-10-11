@@ -297,7 +297,19 @@ function refreshFeedSoon() {
 
 /* ---------------- Realtime ---------------- */
 function setupRealtime() {
-  const reload = debounce(() => { if (S.view === 'home' || S.view === 'profile') refreshFeedSoon(); }, 400);
+  // Full re-render only for OTHER users' changes; own actions already update the UI locally.
+  let rtPending = false;
+  const doReload = debounce(() => {
+    if (!rtPending) return;
+    rtPending = false;
+    if (S.view === 'home' || S.view === 'profile') refreshFeedSoon();
+  }, 400);
+  const reload = (payload) => {
+    const row = (payload && (payload.new || payload.old)) || {};
+    const isMine = (row.author_id && row.author_id === ME.id) || (row.user_id && row.user_id === ME.id);
+    if (!isMine) rtPending = true;
+    doReload();
+  };
   rtChannels.push(onTable('posts', reload));
   rtChannels.push(onTable('comments', reload));
   rtChannels.push(onTable('reactions', reload));
@@ -894,6 +906,7 @@ async function sharePostUI(pid) {
   const p = POST_CACHE[pid]; if (!p) return;
   try {
     await createPost({ shared_from: p.shared_from || p.id });
+    refreshFeedSoon();
     toast('Post shared to your timeline.');
   } catch (e) { err(e); }
 }
