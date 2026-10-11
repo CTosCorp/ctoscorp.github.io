@@ -227,3 +227,29 @@ div.thought-bubble[onclick] { cursor: pointer; }
   .profile-row { margin-top: -40px; }
   .photo-grid { grid-template-columns: repeat(3, 1fr); gap: 4px; }
 }
+
+/* ---------- story viewer ---------- */
+#storyViewer { position: fixed; inset: 0; z-index: 400; background: rgba(0,0,0,.92); display: flex; align-items: center; justify-content: center; }
+.sv-card { position: relative; width: min(420px, 94vw); height: min(78vh, 700px); border-radius: 14px; overflow: hidden; background: #111; }
+.sv-progress { position: absolute; top: 10px; left: 10px; right: 10px; display: flex; gap: 5px; z-index: 5; }
+.sv-bar { flex: 1; height: 3px; background: rgba(255,255,255,.35); border-radius: 2px; overflow: hidden; }
+.sv-fill { height: 100%; width: 0; background: #fff; border-radius: 2px; }
+.sv-fill.done { width: 100%; }
+.sv-fill.now { animation: svfill 5s linear forwards; }
+@keyframes svfill { from { width: 0; } to { width: 100%; } }
+.sv-head { position: absolute; top: 22px; left: 12px; right: 12px; display: flex; align-items: center; gap: 10px; z-index: 5; color: #fff; }
+.sv-who { flex: 1; }
+.sv-who b { font-size: 14px; text-shadow: 0 1px 3px rgba(0,0,0,.7); }
+.sv-who .muted { color: #ddd; text-shadow: 0 1px 3px rgba(0,0,0,.7); }
+.sv-close, .sv-del { background: rgba(0,0,0,.45); border: none; color: #fff; width: 34px; height: 34px; border-radius: 50%; font-size: 16px; }
+.sv-body { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+.sv-body img { width: 100%; height: 100%; object-fit: cover; }
+.sv-body.sg1, .sv-body.sg2, .sv-body.sg3, .sv-body.sg4,
+.sv-body.bg-blue, .sv-body.bg-purple, .sv-body.bg-green,
+.sv-body.bg-orange, .sv-body.bg-teal, .sv-body.bg-pink { width: 100%; height: 100%; }
+.sv-text { color: #fff; font-size: 26px; font-weight: 800; text-align: center; padding: 30px; line-height: 1.4; word-break: break-word; }
+.sv-tap { position: absolute; top: 0; bottom: 0; z-index: 4; }
+.sv-left { left: 0; width: 30%; }
+.sv-right { right: 0; width: 70%; }
+.story-text-prev { position: absolute; top: 50%; left: 10px; right: 10px; transform: translateY(-50%); color: #fff; font-size: 13px; font-weight: 700; text-align: center; text-shadow: 0 1px 3px rgba(0,0,0,.6); line-height: 1.35; }
+.story .story-top img { display: block; }

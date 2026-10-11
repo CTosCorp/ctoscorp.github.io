@@ -182,6 +182,7 @@ function renderApp() {
   renderView();
   setupRealtime();
   refreshNotifBadge();
+  cleanupMyStories().then(() => { if (S.view === 'home') refreshStories(); }).catch(() => {});
 }
 function closeDropdowns(e) {
   if (!e.target.closest('#dropdown') && !e.target.closest('.tb-ico') && !e.target.closest('.tb-avatar') && !e.target.closest('.post-menu-btn'))
@@ -217,7 +218,10 @@ async function loadHomeFeed() {
     const el = $('#posts');
     if (el) el.innerHTML = postsHTML(posts.filter(p => !p.author.banned));
     const st = $('#storiesRow');
-    if (st) st.innerHTML = await storiesHTML();
+    if (st) {
+      const html = await storiesHTML();
+      st.innerHTML = myStoryCardHTML() + html;
+    }
   } catch (e) { err(e); }
 }
 function refreshFeedSoon() {
@@ -234,6 +238,7 @@ function setupRealtime() {
   rtChannels.push(onTable('posts', reload));
   rtChannels.push(onTable('comments', reload));
   rtChannels.push(onTable('likes', reload));
+  rtChannels.push(onTable('stories', debounce(() => { if (S.view === 'home') refreshStories(); }, 600)));
   rtChannels.push(onTable('profiles', debounce(() => loadRightBar(), 800)));
   rtChannels.push(onTable('notifications', async (payload) => {
     if (payload.eventType === 'INSERT' && payload.new.user_id === ME.id) {
@@ -286,16 +291,130 @@ async function loadRightBar() {
 /* ---------------- Stories / composer ---------------- */
 const STORY_GRADS = ['sg1', 'sg2', 'sg3', 'sg4'];
 async function storiesHTML() {
-  const others = (await getUsersList().catch(() => [])).slice(0, 4);
-  return others.map((u, i) => `
-    <div class="story ${STORY_GRADS[i % 4]}" onclick="toast('Stories are decorative in this demo')">
-      <div class="story-av">${pav(u, 36)}</div>
-      <div class="story-label">${esc(u.name.split(' ')[0])}</div>
-    </div>`).join('');
+  let stories = [];
+  try { stories = await getStories(); } catch (e) { console.error(e); }
+  S._stories = stories;
+  const byAuthor = {};
+  stories.forEach(s => { if (!byAuthor[s.author_id]) byAuthor[s.author_id] = s; });
+  const mine = byAuthor[ME.id];
+  const others = Object.values(byAuthor).filter(s => s.author_id !== ME.id).slice(0, 10);
+  return others.map((s, i) => {
+    const a = s.author;
+    return `<div ${s.image_url ? 'class="story"' : `class="story ${s.bg || STORY_GRADS[i % 4]}"`} ${s.image_url ? `style="background-image:url('${esc(s.image_url)}');background-size:cover;background-position:center"` : ''} onclick="openStoryViewer('${s.author_id}')">
+      <div class="story-av">${pav(a, 36)}</div>
+      ${!s.image_url && s.text ? `<div class="story-text-prev">${esc(s.text.slice(0, 60))}</div>` : ''}
+      <div class="story-label">${esc((a.name || '?').split(' ')[0])}</div>
+    </div>`;
+  }).join('');
+}
+function myStoryCardHTML() {
+  const mine = (S._stories || []).find(s => s.author_id === ME.id);
+  return `<div class="story create" onclick="${mine ? `openStoryViewer('${ME.id}')` : 'openStoryComposer()'}">
+    <div class="story-top">${mine && mine.image_url
+      ? `<img src="${esc(mine.image_url)}" style="width:100%;height:100%;object-fit:cover">`
+      : pav(ME, 64)}</div>
+    <div class="story-plus" onclick="event.stopPropagation();openStoryComposer()">+</div>
+    <div class="story-label">${mine ? 'Your story' : 'Create story'}</div>
+  </div>`;
+}
+async function refreshStories() {
+  const row = $('#storiesRow');
+  if (!row || S.view !== 'home') return;
+  try {
+    const stories = await getStories();
+    S._stories = stories;
+    row.innerHTML = myStoryCardHTML() + await storiesHTML();
+  } catch (e) { /* ignore */ }
+}
+
+/* ---- story composer ---- */
+function openStoryComposer() {
+  S.storyBg = '';
+  openModal(`<h3>Create story</h3>
+    <p class="muted" style="text-align:center;margin:-8px 0 10px">Visible for 24 hours</p>
+    <textarea id="st_text" class="cp-text" placeholder="Say something..." rows="2" maxlength="200"></textarea>
+    <div class="swatches" id="st_sw">${BG_SWATCHES.map(b => `<button class="sw ${b} ${b === '' ? 'sw-none sel' : ''}" onclick="pickStoryBg('${b}',this)"></button>`).join('')}</div>
+    <label class="lbl">Photo (optional)</label>
+    <input id="st_file" type="file" accept="image/*" class="inp">
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Cancel</button>
+    <button class="btn-primary" id="st_btn" onclick="submitStory()">Share story</button></div>`);
+}
+function pickStoryBg(b, el) {
+  S.storyBg = b;
+  $$('#st_sw .sw').forEach(x => x.classList.remove('sel'));
+  el.classList.add('sel');
+}
+async function submitStory() {
+  const text = $('#st_text').value.trim();
+  const file = $('#st_file').files[0];
+  if (!text && !file) { toast('Add a photo or text first.'); return; }
+  const btn = $('#st_btn'); btn.disabled = true; btn.textContent = 'Sharing...';
+  try {
+    let image_url = null;
+    if (file) { btn.textContent = 'Uploading...'; image_url = await uploadToMedia(file, 'story'); }
+    await createStory({ image_url, text, bg: S.storyBg || null });
+    closeModal(); refreshStories(); toast('Story shared! 📸');
+  } catch (e) { err(e); btn.disabled = false; btn.textContent = 'Share story'; }
+}
+
+/* ---- story viewer ---- */
+let STORY_VIEW = null;
+async function openStoryViewer(authorId) {
+  let stories = S._stories || [];
+  if (!stories.length) { try { stories = await getStories(); S._stories = stories; } catch (e) {} }
+  const list = stories.filter(s => s.author_id === authorId);
+  if (!list.length) { toast('Story expired.'); refreshStories(); return; }
+  STORY_VIEW = { list, idx: 0, timer: null };
+  renderStoryViewer();
+}
+function renderStoryViewer() {
+  closeStoryViewer(true);
+  const s = STORY_VIEW.list[STORY_VIEW.idx];
+  const a = s.author || { name: '?' };
+  const mine = s.author_id === ME.id;
+  const v = document.createElement('div');
+  v.id = 'storyViewer';
+  v.innerHTML = `
+    <div class="sv-card">
+      <div class="sv-progress">${STORY_VIEW.list.map((_, i) =>
+        `<div class="sv-bar"><div class="sv-fill ${i < STORY_VIEW.idx ? 'done' : ''} ${i === STORY_VIEW.idx ? 'now' : ''}"></div></div>`).join('')}</div>
+      <div class="sv-head">${pav(a, 36)}<div class="sv-who"><b>${esc(a.name)}</b><div class="muted">${timeAgo(s.created_at)}</div></div>
+        ${mine ? `<button class="sv-del" onclick="deleteCurrentStory()" title="Delete story">🗑️</button>` : ''}
+        <button class="sv-close" onclick="closeStoryViewer()">✕</button></div>
+      <div class="sv-body ${s.image_url ? '' : (s.bg || 'sg1')}">
+        ${s.image_url ? `<img src="${esc(s.image_url)}">` : `<div class="sv-text">${esc(s.text)}</div>`}
+      </div>
+      <div class="sv-tap sv-left" onclick="storyNav(-1)"></div>
+      <div class="sv-tap sv-right" onclick="storyNav(1)"></div>
+    </div>`;
+  document.body.appendChild(v);
+  clearTimeout(STORY_VIEW.timer);
+  STORY_VIEW.timer = setTimeout(() => storyNav(1), 5000);
+}
+function storyNav(d) {
+  if (!STORY_VIEW) return;
+  const n = STORY_VIEW.idx + d;
+  if (n < 0) { renderStoryViewer(); return; }
+  if (n >= STORY_VIEW.list.length) { closeStoryViewer(); return; }
+  STORY_VIEW.idx = n;
+  renderStoryViewer();
+}
+function closeStoryViewer(keep) {
+  const v = $('#storyViewer');
+  if (v) v.remove();
+  if (STORY_VIEW) clearTimeout(STORY_VIEW.timer);
+  if (!keep) STORY_VIEW = null;
+}
+async function deleteCurrentStory() {
+  if (!STORY_VIEW) return;
+  const s = STORY_VIEW.list[STORY_VIEW.idx];
+  if (!confirm('Delete this story?')) return;
+  try { await deleteStory(s.id); closeStoryViewer(); refreshStories(); toast('Story deleted.'); }
+  catch (e) { err(e); }
 }
 function composerHTML() {
   return `<div id="storiesRow" class="stories">
-      <div class="story create" onclick="toast('Stories are decorative in this demo')">
+      <div class="story create" onclick="openStoryComposer()">
         <div class="story-top">${pav(ME, 64)}</div>
         <div class="story-plus">+</div><div class="story-label">Create story</div>
       </div>
@@ -543,7 +662,7 @@ async function profileHTML(uidv) {
       </div>
       <div class="profile-btns">
         ${mine
-          ? `<button class="btn-primary" onclick="toast('Stories are decorative in this demo')">⊕ Add to story</button>
+          ? `<button class="btn-primary" onclick="openStoryComposer()">⊕ Add to story</button>
              <button class="btn-ghost" onclick="editProfile()">✏️ Edit profile</button>`
           : `<button class="${following ? 'btn-ghost' : 'btn-primary'}" id="followBtn" onclick="toggleFollowUI('${u.id}')">${following ? '✓ Following' : '+ Follow'}</button>
              <button class="btn-ghost" onclick="toast('Messenger is decorative in this demo')">💬 Message</button>`}

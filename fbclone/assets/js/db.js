@@ -357,6 +357,38 @@ async function getFollowing(uid) {
   return profs || [];
 }
 
+/* ---------------- Stories ---------------- */
+async function getStories() {
+  const { data, error } = await sb.from('stories').select('*')
+    .gt('expires_at', new Date().toISOString())
+    .order('created_at', { ascending: false }).limit(60);
+  if (error) throw error;
+  const authorIds = [...new Set((data || []).map(s => s.author_id))];
+  let amap = {};
+  if (authorIds.length) {
+    const { data: profs } = await sb.from('profiles').select('id,name,avatar_url').in('id', authorIds);
+    amap = Object.fromEntries((profs || []).map(p => [p.id, p]));
+  }
+  return (data || []).map(s => ({ ...s, author: amap[s.author_id] || { name: '?' } }));
+}
+async function createStory({ image_url, text, bg }) {
+  const { data, error } = await sb.from('stories').insert({
+    author_id: ME.id, image_url: image_url || null, text: text || '', bg: bg || null,
+  }).select().single();
+  if (error) throw error;
+  return data;
+}
+async function deleteStory(id) {
+  const { error } = await sb.from('stories').delete().eq('id', id);
+  if (error) throw error;
+}
+async function cleanupMyStories() {
+  try {
+    await sb.from('stories').delete()
+      .lt('expires_at', new Date().toISOString()).eq('author_id', ME.id);
+  } catch (e) { /* ignore */ }
+}
+
 /* ---------------- Realtime ---------------- */
 function onTable(table, cb, filter) {
   const ch = sb.channel('rt-' + table + '-' + Math.random().toString(36).slice(2, 8));
