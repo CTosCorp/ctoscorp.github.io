@@ -348,3 +348,8 @@ div.thought-bubble[onclick] { cursor: pointer; }
   .group-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
   .tb-tab { padding: 8px 18px; }
 }
+
+/* danger button (for confirm dialogs) */
+.btn-danger { background: #E41E3F; color: #fff; border: none; border-radius: 8px; padding: 10px 18px; font-weight: 700; font-size: 15px; }
+.btn-danger:hover { background: #c41836; }
+.btn-danger:disabled { opacity: .6; }

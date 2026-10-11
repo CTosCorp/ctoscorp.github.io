@@ -17,6 +17,24 @@ function toast(msg) {
   clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2400);
 }
 function closeModal() { const m = $('#modal'); if (m) m.remove(); }
+/* Non-blocking confirm dialog (native confirm() hangs some browsers) */
+function confirmDialog(msg, okLabel) {
+  return new Promise((resolve) => {
+    closeModal();
+    const m = document.createElement('div');
+    m.id = 'modal';
+    m.innerHTML = `<div class="modal-back"></div><div class="modal-box" style="text-align:center">
+      <h3 style="margin-bottom:8px">${esc(msg)}</h3>
+      <div class="modal-actions" style="justify-content:center">
+        <button class="btn-ghost" id="cf_no">Cancel</button>
+        <button class="btn-danger" id="cf_yes">${esc(okLabel || 'Delete')}</button>
+      </div></div>`;
+    document.body.appendChild(m);
+    m.querySelector('.modal-back').onclick = () => { m.remove(); resolve(false); };
+    m.querySelector('#cf_no').onclick = () => { m.remove(); resolve(false); };
+    m.querySelector('#cf_yes').onclick = () => { m.remove(); resolve(true); };
+  });
+}
 function openModal(html) {
   closeModal();
   const m = document.createElement('div');
@@ -448,7 +466,7 @@ function closeStoryViewer(keep) {
 async function deleteCurrentStory() {
   if (!STORY_VIEW) return;
   const s = STORY_VIEW.list[STORY_VIEW.idx];
-  if (!confirm('Delete this story?')) return;
+  if (!await confirmDialog('Delete this story?')) return;
   try { await deleteStory(s.id); closeStoryViewer(); refreshStories(); toast('Story deleted.'); }
   catch (e) { err(e); }
 }
@@ -634,7 +652,7 @@ function toggleDark() {
   renderApp();
 }
 async function deletePostUI(pid) {
-  if (!confirm('Delete this post?')) return;
+  if (!await confirmDialog('Delete this post?')) return;
   try { await deletePost(pid); $('#dropdown').innerHTML = ''; S.openMenu = null; refreshFeedSoon(); toast('Post deleted.'); }
   catch (e) { err(e); }
 }
@@ -1028,7 +1046,7 @@ function openListingDetail(id) {
 }
 
 async function deleteListingUI(id) {
-  if (!confirm('Delete this listing?')) return;
+  if (!await confirmDialog('Delete this listing?')) return;
   try { await deleteListing(id); closeModal(); renderView(); toast('Listing deleted.'); }
   catch (e) { err(e); }
 }
@@ -1121,7 +1139,7 @@ async function rsvpUI(id, status) {
 }
 
 async function deleteEventUI(id) {
-  if (!confirm('Delete this event?')) return;
+  if (!await confirmDialog('Delete this event?')) return;
   try { await deleteEvent(id); closeModal(); renderView(); toast('Event deleted.'); }
   catch (e) { err(e); }
 }
@@ -1187,7 +1205,7 @@ async function toggleJoinUI(groupId, joined) {
 }
 
 async function deleteGroupUI(id) {
-  if (!confirm('Delete this group and all its posts?')) return;
+  if (!await confirmDialog('Delete this group and all its posts?')) return;
   try { await deleteGroup(id); goGroups(); toast('Group deleted.'); }
   catch (e) { err(e); }
 }
