@@ -95,7 +95,7 @@ function renderPanel() {
     </aside>
     <div class="a-main">
       <div class="a-top"><h2 id="a_title"></h2>
-        <div class="a-admin">${avatarHTML(ME.name, 32)}<span>${esc(ME.name)}</span></div>
+        <div class="a-admin">${pav(ME, 32)}<span>${esc(ME.name)}</span></div>
       </div>
       <div class="a-content" id="a_content"><div class="a-card">Loading...</div></div>
     </div>
@@ -148,7 +148,7 @@ async function dashHTML() {
     <div class="a-card grow"><h3>Posts — last 7 days <span class="live-tag">● LIVE</span></h3><canvas id="chart" width="520" height="220"></canvas></div>
     <div class="a-card grow"><h3>Recent posts</h3>
       ${recent.map(p => `
-        <div class="recent-row">${avatarHTML(p.author.name, 32)}
+        <div class="recent-row">${pav(p.author, 32)}
           <div><b>${esc(p.author.name)}</b><div class="muted">${esc((p.text || '(photo post)').slice(0, 70))} · ${timeAgo(p.created_at)}</div></div>
         </div>`).join('') || '<div class="muted">No posts yet.</div>'}
     </div>
@@ -200,7 +200,7 @@ function refreshUsersTable() {
 }
 function usersRows(users) {
   return users.map(u => `<tr>
-      <td><div class="cell-user">${avatarHTML(u.name, 32)}<b>${esc(u.name)}</b>${u.is_admin ? ' <span class="tag admin-tag">ADMIN</span>' : ''}</div></td>
+      <td><div class="cell-user">${pav(u, 32)}<b>${esc(u.name)}</b>${u.is_admin ? ' <span class="tag admin-tag">ADMIN</span>' : ''}</div></td>
       <td class="muted">${esc(u.email || '')}</td>
       <td class="muted">${new Date(u.created_at).toLocaleDateString()}</td>
       <td>${u.postCount}</td>
@@ -237,7 +237,7 @@ async function postsHTML() {
   </tr></thead><tbody>
   ${posts.map(p => `<tr>
     <td><div class="post-cell">${p.pinned ? '<span class="tag pin-tag2">PINNED</span> ' : ''}${esc((p.text || (p.image_url ? '[photo]' : '[shared]')).slice(0, 80))}</div></td>
-    <td><div class="cell-user">${avatarHTML(p.author.name, 28)}${esc(p.author.name)}</div></td>
+    <td><div class="cell-user">${pav(p.author, 28)}${esc(p.author.name)}</div></td>
     <td>${p.likeCount}</td><td>${(p.comments || []).length}</td>
     <td class="muted">${fullDate(p.created_at)}</td>
     <td class="actions">

@@ -58,7 +58,7 @@ async function hydratePosts(posts) {
   const authorIds = [...new Set(posts.map(p => p.author_id))];
   const sharedIds = [...new Set(posts.map(p => p.shared_from).filter(Boolean))];
   const [profsR, likesR, commentsR, sharedR] = await Promise.all([
-    sb.from('profiles').select('id,name,bio,banned').in('id', authorIds),
+    sb.from('profiles').select('id,name,bio,banned,avatar_url').in('id', authorIds),
     sb.from('likes').select('post_id,user_id').in('post_id', ids),
     sb.from('comments').select('id,post_id,text,created_at,author_id').in('post_id', ids).order('created_at', { ascending: true }),
     sharedIds.length ? sb.from('posts').select('*').in('id', sharedIds) : Promise.resolve({ data: [] }),
@@ -69,12 +69,16 @@ async function hydratePosts(posts) {
   const cAuthorIds = [...new Set(comments.map(c => c.author_id))];
   let cmap = {};
   if (cAuthorIds.length) {
-    const { data: cprofs } = await sb.from('profiles').select('id,name').in('id', cAuthorIds);
+    const { data: cprofs } = await sb.from('profiles').select('id,name,avatar_url').in('id', cAuthorIds);
     cmap = Object.fromEntries((cprofs || []).map(p => [p.id, p]));
   }
   const sharedMap = {};
   for (const s of shared) {
-    const sa = pmap[s.author_id] || (await sb.from('profiles').select('id,name,bio,banned').eq('id', s.author_id).single()).data;
+    let sa = pmap[s.author_id];
+    if (!sa) {
+      const r = await sb.from('profiles').select('id,name,bio,banned,avatar_url').eq('id', s.author_id).single();
+      sa = r.data;
+    }
     sharedMap[s.id] = { ...s, author: sa || { name: '?', banned: false } };
   }
   return posts.map(p => ({
@@ -142,7 +146,7 @@ async function followingIds() {
   return (data || []).map(f => f.following_id);
 }
 async function getUsersList(query = '') {
-  let q = sb.from('profiles').select('id,name,bio,created_at,banned,is_admin')
+  let q = sb.from('profiles').select('id,name,bio,avatar_url,created_at,banned,is_admin')
     .eq('banned', false).neq('id', ME.id).order('created_at', { ascending: false }).limit(60);
   if (query) q = q.ilike('name', `%${query}%`);
   const { data, error } = await q;
@@ -165,7 +169,7 @@ async function updateBio(bio) {
 }
 async function searchAll(q) {
   const [u, p] = await Promise.all([
-    sb.from('profiles').select('id,name,bio').eq('banned', false).ilike('name', `%${q}%`).limit(20),
+    sb.from('profiles').select('id,name,bio,avatar_url').eq('banned', false).ilike('name', `%${q}%`).limit(20),
     sb.from('posts').select('*').ilike('text', `%${q}%`).order('created_at', { ascending: false }).limit(30),
   ]);
   return { users: u.data || [], posts: await hydratePosts(p.data || []) };
@@ -186,7 +190,7 @@ async function getNotifications(limit = 20) {
   const actorIds = [...new Set((data || []).map(n => n.actor_id).filter(Boolean))];
   let amap = {};
   if (actorIds.length) {
-    const { data: actors } = await sb.from('profiles').select('id,name').in('id', actorIds);
+    const { data: actors } = await sb.from('profiles').select('id,name,avatar_url').in('id', actorIds);
     amap = Object.fromEntries((actors || []).map(a => [a.id, a]));
   }
   return (data || []).map(n => ({ ...n, actor: amap[n.actor_id] || { name: 'Someone' } }));
@@ -316,6 +320,41 @@ async function seedDemoPosts() {
     // eslint-disable-next-line no-await-in-loop
     await sb.from('posts').insert({ author_id: ME.id, ...d });
   }
+}
+
+/* ---------------- Profile extras ---------------- */
+async function uploadToMedia(file, folder) {
+  const ext = (file.name.split('.').pop() || 'jpg').slice(0, 5);
+  const path = `${ME.id}/${folder}_${Date.now()}.${ext}`;
+  const { error } = await sb.storage.from('media').upload(path, file, { upsert: false });
+  if (error) throw error;
+  return sb.storage.from('media').getPublicUrl(path).data.publicUrl;
+}
+async function updateProfile(patch) {
+  const { error } = await sb.from('profiles').update(patch).eq('id', ME.id);
+  if (error) throw error;
+  Object.assign(ME, patch);
+}
+async function getUserPhotos(uid) {
+  const { data, error } = await sb.from('posts').select('id,image_url,created_at')
+    .eq('author_id', uid).not('image_url', 'is', null)
+    .order('created_at', { ascending: false }).limit(60);
+  if (error) throw error;
+  return data || [];
+}
+async function getFollowers(uid) {
+  const { data } = await sb.from('follows').select('follower_id').eq('following_id', uid);
+  const ids = (data || []).map(f => f.follower_id);
+  if (!ids.length) return [];
+  const { data: profs } = await sb.from('profiles').select('id,name,bio,avatar_url').in('id', ids);
+  return profs || [];
+}
+async function getFollowing(uid) {
+  const { data } = await sb.from('follows').select('following_id').eq('follower_id', uid);
+  const ids = (data || []).map(f => f.following_id);
+  if (!ids.length) return [];
+  const { data: profs } = await sb.from('profiles').select('id,name,bio,avatar_url').in('id', ids);
+  return profs || [];
 }
 
 /* ---------------- Realtime ---------------- */

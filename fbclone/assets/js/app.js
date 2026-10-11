@@ -168,7 +168,7 @@ function renderApp() {
       <span class="live-dot" title="Realtime connected">● LIVE</span>
       <button class="tb-ico" onclick="toast('Messenger is decorative in this demo')" title="Messenger">✉</button>
       <button class="tb-ico" onclick="toggleNotif(event)" title="Notifications">🔔<span class="badge" id="notifBadge">0</span></button>
-      <button class="tb-avatar" onclick="toggleMenu(event,'profile')">${avatarHTML(ME.name, 36)}</button>
+      <button class="tb-avatar" onclick="toggleMenu(event,'profile')">${pav(ME, 36)}</button>
     </div>
   </header>
   <div id="dropdown"></div>
@@ -190,7 +190,7 @@ function closeDropdowns(e) {
 function goHome() { S.view = 'home'; S.profileId = null; S.query = ''; renderApp(); }
 function doSearch(v) { S.query = v.trim(); if (S.query) { S.view = 'search'; renderApp(); } }
 function showFriends() { S.view = 'friends'; renderApp(); }
-function openProfile(id) { S.view = 'profile'; S.profileId = id; renderApp(); window.scrollTo(0, 0); }
+function openProfile(id) { S.view = 'profile'; S.profileId = id; PROFILE_TAB = 'posts'; renderApp(); window.scrollTo(0, 0); }
 
 async function renderView() {
   const f = $('#feed');
@@ -208,7 +208,7 @@ function homeSkeleton() {
 }
 function storiesSkeleton() {
   return `<div class="stories"><div class="story create" style="opacity:.5">
-    <div class="story-top">${avatarHTML(ME.name, 64)}</div>
+    <div class="story-top">${pav(ME, 64)}</div>
     <div class="story-plus">+</div><div class="story-label">Create story</div></div></div>`;
 }
 async function loadHomeFeed() {
@@ -259,7 +259,7 @@ function leftNavHTML() {
   ];
   return items.map(([ico, label, act]) => `
     <button class="nav-item" onclick="${act === 'profile' ? `openProfile('${ME.id}')` : act === 'friends' ? 'showFriends()' : `toast('${label} is decorative in this demo')`}">
-      ${act === 'profile' ? avatarHTML(ME.name, 32) : `<span class="nav-ico">${ico}</span>`}
+      ${act === 'profile' ? pav(ME, 32) : `<span class="nav-ico">${ico}</span>`}
       <span>${esc(label)}</span>
     </button>`).join('');
 }
@@ -276,7 +276,7 @@ async function loadRightBar() {
       <div class="side-sec"><div class="side-title">Contacts · ${others.length}</div>
         ${others.slice(0, 14).map(u => `
           <button class="contact" onclick="openProfile('${u.id}')">
-            <span class="contact-av">${avatarHTML(u.name, 32)}<span class="dot"></span></span>
+            <span class="contact-av">${pav(u, 32)}<span class="dot"></span></span>
             <span>${esc(u.name)}</span>
           </button>`).join('') || '<div class="muted">No other users yet.</div>'}
       </div>`;
@@ -289,20 +289,20 @@ async function storiesHTML() {
   const others = (await getUsersList().catch(() => [])).slice(0, 4);
   return others.map((u, i) => `
     <div class="story ${STORY_GRADS[i % 4]}" onclick="toast('Stories are decorative in this demo')">
-      <div class="story-av">${avatarHTML(u.name, 36)}</div>
+      <div class="story-av">${pav(u, 36)}</div>
       <div class="story-label">${esc(u.name.split(' ')[0])}</div>
     </div>`).join('');
 }
 function composerHTML() {
   return `<div id="storiesRow" class="stories">
       <div class="story create" onclick="toast('Stories are decorative in this demo')">
-        <div class="story-top">${avatarHTML(ME.name, 64)}</div>
+        <div class="story-top">${pav(ME, 64)}</div>
         <div class="story-plus">+</div><div class="story-label">Create story</div>
       </div>
     </div>
   <div class="composer card">
     <div class="composer-top" onclick="openComposer()">
-      ${avatarHTML(ME.name, 40)}
+      ${pav(ME, 40)}
       <div class="composer-fake">What's on your mind, ${esc(ME.name.split(' ')[0])}?</div>
     </div>
     <hr>
@@ -324,7 +324,7 @@ function postHTML(p) {
   const comments = p.comments || [];
   return `<article class="post card" id="post_${p.id}">
     <div class="post-head">
-      <span onclick="openProfile('${a.id || ''}')" class="clickable">${avatarHTML(a.name, 40)}</span>
+      <span onclick="openProfile('${a.id || ''}')" class="clickable">${pav(a, 40)}</span>
       <div class="post-meta">
         <div class="post-name" onclick="openProfile('${a.id || ''}')">${esc(a.name)}
           ${p.pinned ? ' <span class="pin-tag">📌 Pinned</span>' : ''}</div>
@@ -353,7 +353,7 @@ function postHTML(p) {
       ${comments.length > 3 ? `<button class="more-c" onclick="showAllComments('${p.id}')">View all ${comments.length} comments</button>` : ''}
     </div>
     <div class="add-comment">
-      ${avatarHTML(ME.name, 32)}
+      ${pav(ME, 32)}
       <input id="cin_${p.id}" placeholder="Write a comment..." onkeydown="if(event.key==='Enter')addCommentUI('${p.id}')">
     </div>
   </article>`;
@@ -361,7 +361,7 @@ function postHTML(p) {
 function sharedHTML(s) {
   const a = s.author || { name: '?' };
   return `<div class="post" style="box-shadow:none">
-    <div class="post-head"><span class="clickable" onclick="openProfile('${a.id || ''}')">${avatarHTML(a.name, 36)}</span>
+    <div class="post-head"><span class="clickable" onclick="openProfile('${a.id || ''}')">${pav(a, 36)}</span>
       <div class="post-meta"><div class="post-name" onclick="openProfile('${a.id || ''}')">${esc(a.name)}</div>
       <div class="post-time">${timeAgo(s.created_at)}</div></div></div>
     ${s.text ? `<div class="post-text">${esc(s.text)}</div>` : ''}
@@ -370,7 +370,7 @@ function sharedHTML(s) {
 }
 function commentHTML(c) {
   return `<div class="comment">
-    ${avatarHTML(c.author.name, 32)}
+    ${pav(c.author, 32)}
     <div class="comment-body"><b>${esc(c.author.name)}</b><div>${esc(c.text)}</div></div>
   </div>`;
 }
@@ -436,7 +436,7 @@ function toggleMenu(e, id) {
   let html = '';
   if (id === 'profile') {
     html = `<div class="menu" style="top:${r.bottom + 6}px;right:${window.innerWidth - r.right}px">
-      <button onclick="openProfile('${ME.id}')">${avatarHTML(ME.name, 32)}<span><b>${esc(ME.name)}</b><br><span class="muted">See your profile</span></span></button>
+      <button onclick="openProfile('${ME.id}')">${pav(ME, 32)}<span><b>${esc(ME.name)}</b><br><span class="muted">See your profile</span></span></button>
       <hr>
       <button onclick="toggleDark()">🌙 Dark mode: ${S.dark ? 'On' : 'Off'}</button>
       ${ME.is_admin ? `<button onclick="location.href='admin.html'">🛠️ Admin Panel</button>` : ''}
@@ -482,7 +482,7 @@ const BG_SWATCHES = ['', 'bg-blue', 'bg-purple', 'bg-green', 'bg-orange', 'bg-te
 function openComposer() {
   S.composerBg = '';
   openModal(`<h3>Create post</h3>
-    <div class="composer-user">${avatarHTML(ME.name, 40)}<div><b>${esc(ME.name)}</b><div class="muted">🌐 Public</div></div></div>
+    <div class="composer-user">${pav(ME, 40)}<div><b>${esc(ME.name)}</b><div class="muted">🌐 Public</div></div></div>
     <textarea id="cp_text" class="cp-text" placeholder="What's on your mind, ${esc(ME.name.split(' ')[0])}?" rows="4"></textarea>
     <div class="swatches" id="cp_sw">${BG_SWATCHES.map(b => `<button class="sw ${b} ${b === '' ? 'sw-none sel' : ''}" onclick="pickBg('${b}',this)"></button>`).join('')}</div>
     <label class="lbl">Photo (optional)</label>
@@ -514,27 +514,148 @@ async function submitPost() {
 }
 
 /* ---------------- Profile ---------------- */
+let PROFILE_TAB = 'posts';
+
 async function profileHTML(uidv) {
   const { profile: u, posts, followers } = await getProfilePage(uidv);
   cachePosts(posts);
+  S._profile = { u, posts, followers };
+  S._profilePosts = posts;
   const mine = u.id === ME.id;
   const following = S.followingCache.includes(u.id);
   return `
   <div class="card profile-top">
-    <div class="cover"></div>
+    <div class="cover" ${u.cover_url ? `style="background-image:url('${esc(u.cover_url)}')"` : ''}>
+      ${mine ? `<button class="cover-cam" onclick="document.getElementById('coverFile').click()" title="Edit cover photo">📷</button>
+      <input type="file" id="coverFile" accept="image/*" style="display:none" onchange="doChangeCover(this)">` : ''}
+    </div>
     <div class="profile-row">
-      ${avatarHTML(u.name, 120)}
+      <div class="pfp-wrap">
+        ${pav(u, 120)}
+        ${mine ? `<button class="pfp-cam" onclick="document.getElementById('avatarFile').click()" title="Edit profile picture">📷</button>
+        <input type="file" id="avatarFile" accept="image/*" style="display:none" onchange="doChangeAvatar(this)">` : ''}
+      </div>
       <div class="profile-info"><h2>${esc(u.name)}</h2>
-        <div class="muted">${esc(u.bio || '')}</div>
+        ${u.thought
+          ? `<div class="thought-bubble" ${mine ? 'onclick="editThought()" title="Edit thought"' : ''}>💭 ${esc(u.thought)}</div>`
+          : (mine ? `<div class="thought-bubble empty" onclick="editThought()">+ Drop a thought...</div>` : '')}
         <div class="muted">${posts.length} posts · ${followers} followers</div>
       </div>
-      ${mine
-        ? `<button class="btn-ghost" onclick="editProfile()">✏️ Edit profile</button>`
-        : `<button class="${following ? 'btn-ghost' : 'btn-primary'}" id="followBtn" onclick="toggleFollowUI('${u.id}')">
-             ${following ? '✓ Following' : '+ Follow'}</button>`}
+      <div class="profile-btns">
+        ${mine
+          ? `<button class="btn-primary" onclick="toast('Stories are decorative in this demo')">⊕ Add to story</button>
+             <button class="btn-ghost" onclick="editProfile()">✏️ Edit profile</button>`
+          : `<button class="${following ? 'btn-ghost' : 'btn-primary'}" id="followBtn" onclick="toggleFollowUI('${u.id}')">${following ? '✓ Following' : '+ Follow'}</button>
+             <button class="btn-ghost" onclick="toast('Messenger is decorative in this demo')">💬 Message</button>`}
+      </div>
+    </div>
+    <div class="profile-tabs">
+      ${['posts', 'about', 'photos', 'friends'].map(t =>
+        `<button class="ptab ${PROFILE_TAB === t ? 'active' : ''}" onclick="setProfileTab('${t}')">${t[0].toUpperCase() + t.slice(1)}</button>`).join('')}
     </div>
   </div>
-  <div id="posts">${postsHTML(posts)}</div>`;
+  <div id="profileTabContent">${await profileTabHTML()}</div>`;
+}
+
+async function setProfileTab(t) {
+  PROFILE_TAB = t;
+  $$('.ptab').forEach(b => b.classList.toggle('active', b.textContent.toLowerCase() === t));
+  const el = $('#profileTabContent');
+  el.innerHTML = '<div class="card empty">Loading...</div>';
+  try { el.innerHTML = await profileTabHTML(); }
+  catch (e) { err(e); }
+}
+
+async function profileTabHTML() {
+  const { u, posts } = S._profile;
+  const mine = u.id === ME.id;
+  if (PROFILE_TAB === 'about') return aboutHTML(u, mine);
+  if (PROFILE_TAB === 'photos') return photosHTML(await getUserPhotos(u.id));
+  if (PROFILE_TAB === 'friends') {
+    const [fl, fg] = await Promise.all([getFollowers(u.id), getFollowing(u.id)]);
+    return friendsTabHTML(fl, fg);
+  }
+  return `${mine ? `<div class="card"><div class="composer-top" onclick="openComposer()">${pav(ME, 40)}<div class="composer-fake">What's on your mind?</div></div></div>` : ''}
+  <div class="card"><div class="posts-head"><h3>Posts</h3>
+    <select id="postFilter" class="inp" style="width:auto;padding:8px 10px" onchange="applyPostFilter()">
+      <option value="recent">Most recent</option><option value="top">Top posts</option>
+    </select></div>
+    <div id="profilePosts">${postsHTML(posts)}</div></div>`;
+}
+
+function applyPostFilter() {
+  const v = $('#postFilter').value;
+  const list = [...(S._profilePosts || [])];
+  if (v === 'top') list.sort((a, b) => b.likeCount - a.likeCount);
+  else list.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  cachePosts(list);
+  $('#profilePosts').innerHTML = postsHTML(list);
+}
+
+function aboutHTML(u, mine) {
+  const bday = u.birthday
+    ? new Date(u.birthday + 'T00:00:00').toLocaleDateString(undefined, { month: 'long', day: 'numeric' })
+    : null;
+  const rows = [
+    ['🎂', 'Birthday', bday || '—'],
+    ['📝', 'Bio', u.bio || '—'],
+    ['📅', 'Joined', new Date(u.created_at).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })],
+  ];
+  return `<div class="card"><div class="posts-head"><h3>Personal details</h3>${mine ? `<button class="btn-ghost" onclick="editProfile()">✏️ Edit</button>` : ''}</div>
+    ${rows.map(([i, l, v]) => `<div class="detail-row"><span class="detail-ico">${i}</span><div><div class="muted">${l}</div><div><b>${esc(v)}</b></div></div></div>`).join('')}</div>`;
+}
+
+function photosHTML(photos) {
+  return `<div class="card"><div class="posts-head"><h3>Photos</h3><span class="muted">${photos.length}</span></div>
+    ${photos.length
+      ? `<div class="photo-grid">${photos.map(p => `<img src="${esc(p.image_url)}" loading="lazy" alt="" onclick="window.open('${esc(p.image_url)}','_blank')">`).join('')}</div>`
+      : `<div class="muted">No photos yet.</div>`}</div>`;
+}
+
+function friendsTabHTML(followers, following) {
+  const person = (u) => {
+    const isMe = u.id === ME.id;
+    const f = S.followingCache.includes(u.id);
+    return `<div class="person" onclick="openProfile('${u.id}')" style="cursor:pointer">${pav(u, 64)}<b>${esc(u.name)}</b>
+      <div class="muted">${esc(u.bio || '')}</div>
+      ${isMe ? '' : `<button class="${f ? 'btn-ghost' : 'btn-primary'}" onclick="event.stopPropagation();toggleFollowUI2('${u.id}',this)">${f ? 'Following' : 'Follow'}</button>`}</div>`;
+  };
+  const grid = (list) => list.length ? `<div class="people-grid">${list.map(person).join('')}</div>` : `<div class="muted">Nothing here yet.</div>`;
+  return `<div class="card"><h3>Followers · ${followers.length}</h3>${grid(followers)}</div>
+          <div class="card"><h3>Following · ${following.length}</h3>${grid(following)}</div>`;
+}
+
+/* profile photo / thought uploads */
+async function doChangeCover(input) {
+  const f = input.files[0]; if (!f) return;
+  toast('Uploading cover photo...');
+  try {
+    const url = await uploadToMedia(f, 'cover');
+    await updateProfile({ cover_url: url });
+    renderView(); toast('Cover photo updated!');
+  } catch (e) { err(e); }
+}
+async function doChangeAvatar(input) {
+  const f = input.files[0]; if (!f) return;
+  toast('Uploading profile picture...');
+  try {
+    const url = await uploadToMedia(f, 'avatar');
+    await updateProfile({ avatar_url: url });
+    renderApp(); toast('Profile picture updated!');
+  } catch (e) { err(e); }
+}
+function editThought() {
+  openModal(`<h3>Drop a thought</h3>
+    <input id="th_val" class="inp" maxlength="120" placeholder="Share a quick thought..." value="${esc(ME.thought || '')}">
+    <div class="modal-actions"><button class="btn-ghost" onclick="saveThought(true)">Remove</button>
+    <button class="btn-primary" onclick="saveThought(false)">Save</button></div>`);
+  setTimeout(() => $('#th_val').focus(), 50);
+}
+async function saveThought(remove) {
+  try {
+    await updateProfile({ thought: remove ? '' : $('#th_val').value.trim().slice(0, 120) });
+    closeModal(); renderView(); toast(remove ? 'Thought removed.' : 'Thought updated!');
+  } catch (e) { err(e); }
 }
 async function toggleFollowUI(uidv) {
   try {
@@ -546,14 +667,22 @@ async function toggleFollowUI(uidv) {
 }
 function editProfile() {
   openModal(`<h3>Edit profile</h3>
+    <label class="lbl">Name</label>
+    <input id="ep_name" class="inp" value="${esc(ME.name)}">
     <label class="lbl">Bio</label>
     <input id="ep_bio" class="inp" placeholder="Bio" value="${esc(ME.bio || '')}">
+    <label class="lbl">Birthday</label>
+    <input id="ep_bday" class="inp" type="date" value="${esc(ME.birthday || '')}">
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Cancel</button>
     <button class="btn-primary" onclick="saveProfile()">Save</button></div>`);
 }
 async function saveProfile() {
-  try { await updateBio($('#ep_bio').value.trim()); closeModal(); renderView(); toast('Profile updated.'); }
-  catch (e) { err(e); }
+  const name = $('#ep_name').value.trim();
+  if (!name) { toast('Name is required.'); return; }
+  try {
+    await updateProfile({ name, bio: $('#ep_bio').value.trim(), birthday: $('#ep_bday').value || null });
+    closeModal(); renderApp(); toast('Profile updated.');
+  } catch (e) { err(e); }
 }
 
 /* ---------------- Friends / Search ---------------- */
@@ -562,7 +691,7 @@ async function friendsHTML() {
   return `<div class="card"><h3>People you may know</h3><div class="people-grid">
     ${others.map(u => {
       const f = S.followingCache.includes(u.id);
-      return `<div class="person">${avatarHTML(u.name, 64)}<b>${esc(u.name)}</b>
+      return `<div class="person">${pav(u, 64)}<b>${esc(u.name)}</b>
         <div class="muted">${esc(u.bio || '')}</div>
         <button class="${f ? 'btn-ghost' : 'btn-primary'}" onclick="toggleFollowUI2('${u.id}',this)">${f ? 'Following' : 'Follow'}</button></div>`;
     }).join('') || '<div class="muted">No other users yet — invite friends!</div>'}
@@ -581,7 +710,7 @@ async function searchHTML() {
   cachePosts(posts);
   return `<div class="card"><h3>Results for "${esc(S.query)}"</h3>
     ${users.length ? `<div class="side-title">People</div>` + users.map(u =>
-      `<button class="contact" onclick="openProfile('${u.id}')">${avatarHTML(u.name, 40)}<span><b>${esc(u.name)}</b><br><span class="muted">${esc(u.bio || '')}</span></span></button>`).join('') : ''}
+      `<button class="contact" onclick="openProfile('${u.id}')">${pav(u, 40)}<span><b>${esc(u.name)}</b><br><span class="muted">${esc(u.bio || '')}</span></span></button>`).join('') : ''}
     ${posts.length ? `<div class="side-title" style="margin-top:12px">Posts</div></div><div style="margin-top:14px">${postsHTML(posts)}</div>`
                    : (users.length ? '</div>' : `</div><div class="card empty" style="margin-top:14px">No results found.</div>`)}
   `;
@@ -601,7 +730,7 @@ async function toggleNotif(e) {
     <div class="notif-head"><b>Notifications</b>
       <button class="mini" style="float:right" onclick="markAllRead(event)">Mark all read</button></div>
     ${items.length ? items.map(n => `
-      <div class="notif ${n.read ? '' : 'unread'}">${avatarHTML(n.actor.name, 40)}
+      <div class="notif ${n.read ? '' : 'unread'}">${pav(n.actor, 40)}
         <div>${icons[n.type] || '🔔'} <b>${esc(n.actor.name)}</b> ${esc((n.message || '').replace(n.actor.name, '').trim()) || n.type}
         <div class="muted">${timeAgo(n.created_at)}</div></div>
       </div>`).join('') : '<div class="notif muted">No notifications yet.</div>'}

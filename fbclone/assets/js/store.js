@@ -30,8 +30,20 @@ function avColor(name) {
 function initials(name) {
   return String(name || '?').trim().split(/\s+/).slice(0, 2).map(w => w[0].toUpperCase()).join('');
 }
-function avatarHTML(name, size, extra) {
+function avatarHTML(name, size, attrs, url) {
   size = size || 40;
-  return `<div class="avatar" style="width:${size}px;height:${size}px;` +
-    `font-size:${Math.round(size * 0.38)}px;background:${avColor(name)}" ${extra || ''}>${esc(initials(name))}</div>`;
+  const dims = `width:${size}px;height:${size}px;`;
+  const fs = Math.round(size * 0.38);
+  // initials always rendered underneath; photo (if any) covers them,
+  // and removes itself if it fails to load (revealing initials)
+  const img = url
+    ? `<img src="${esc(url)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;" onerror="this.remove()">`
+    : '';
+  return `<div class="avatar" style="${dims}font-size:${fs}px;background:${avColor(name)}" ${attrs || ''}>` +
+    `${esc(initials(name))}${img}</div>`;
+}
+// convenience: pass a profile object directly
+function pav(profile, size, attrs) {
+  profile = profile || {};
+  return avatarHTML(profile.name, size, attrs, profile.avatar_url);
 }
