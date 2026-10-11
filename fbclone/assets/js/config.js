@@ -1,11 +1,13 @@
 /* ============================================================
    FaceClone — Supabase config
-   Paste your Project URL + anon key below (Supabase dashboard
-   → Project Settings → API). The anon key is publishable and
-   safe to ship in client-side code.
+   Project: testnetbdx's Project
+   URL + publishable key from Supabase dashboard → Project
+   Settings → API. The publishable key is designed to be public
+   in client-side code; RLS policies in schema.sql protect data.
+   NEVER use the secret key or a personal access token here.
    ============================================================ */
-const SUPABASE_URL = "YOUR_SUPABASE_URL";
-const SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_KEY";
+const SUPABASE_URL = "https://lbuydigldmjumkbvdmyi.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_Keq6DFn_yqsTyne3t7XzLA__l2J6ynD";
 
 function supabaseConfigured() {
   return typeof SUPABASE_URL === 'string'
