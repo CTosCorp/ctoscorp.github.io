@@ -1585,7 +1585,7 @@ async function profileHTML(uidv) {
         ${mine ? `<button class="pfp-cam" onclick="document.getElementById('avatarFile').click()" title="Edit profile picture">📷</button>
         <input type="file" id="avatarFile" accept="image/*" style="display:none" onchange="doChangeAvatar(this)">` : ''}
       </div>
-      <div class="profile-info"><h2>${esc(u.name)}</h2>
+      <div class="profile-info"><h2>${esc(u.name || (mine ? ME.name : "") || "User")}</h2>
         ${u.thought
           ? `<div class="thought-bubble" ${mine ? 'onclick="editThought()" title="Edit thought"' : ''}>💭 ${esc(u.thought)}</div>`
           : (mine ? `<div class="thought-bubble empty" onclick="editThought()">+ Drop a thought...</div>` : '')}
