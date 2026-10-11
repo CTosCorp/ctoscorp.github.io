@@ -353,3 +353,32 @@ div.thought-bubble[onclick] { cursor: pointer; }
 .btn-danger { background: #E41E3F; color: #fff; border: none; border-radius: 8px; padding: 10px 18px; font-weight: 700; font-size: 15px; }
 .btn-danger:hover { background: #c41836; }
 .btn-danger:disabled { opacity: .6; }
+
+/* ---------- Facebook-style reactions ---------- */
+.post-counts { align-items: center; gap: 6px; }
+.rx-top { display: inline-flex; margin-right: 5px; vertical-align: -3px; }
+.rx-top span { font-size: 16px; line-height: 1; margin-left: -5px; background: var(--card); border-radius: 50%; }
+.rx-top span:first-child { margin-left: 0; }
+.right-counts { margin-left: auto; }
+.post-actions button[data-rxbtn] { user-select: none; -webkit-user-select: none; touch-action: pan-y; }
+.post-actions button .rx-e { font-size: 20px; line-height: 1; }
+.post-actions button.rx-compact { flex: 0 0 auto; }
+/* reaction picker popup */
+.rx-picker {
+  position: fixed; z-index: 600; display: flex; gap: 2px;
+  background: var(--card); border-radius: 999px; padding: 6px 10px;
+  box-shadow: 0 10px 34px rgba(0,0,0,.28); border: 1px solid var(--border);
+}
+.rx-opt {
+  background: none; border: none; cursor: pointer; padding: 4px 5px; line-height: 1;
+  animation: rxPop .28s backwards cubic-bezier(.2,1.4,.4,1);
+  transition: transform .12s ease;
+}
+.rx-opt span { display: block; font-size: 36px; }
+.rx-opt:hover span, .rx-opt:active span { transform: scale(1.4) translateY(-8px); }
+.rx-opt span { transition: transform .12s ease; }
+@keyframes rxPop {
+  from { transform: scale(0) translateY(10px); opacity: 0; }
+  60% { transform: scale(1.25) translateY(-4px); opacity: 1; }
+  to { transform: scale(1) translateY(0); opacity: 1; }
+}

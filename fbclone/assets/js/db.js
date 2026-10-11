@@ -66,14 +66,16 @@ async function hydratePosts(posts) {
   const ids = posts.map(p => p.id);
   const authorIds = [...new Set(posts.map(p => p.author_id))];
   const sharedIds = [...new Set(posts.map(p => p.shared_from).filter(Boolean))];
-  const [profsR, likesR, commentsR, sharedR] = await Promise.all([
+  const [profsR, rxR, commentsR, sharedR, sharesR] = await Promise.all([
     sb.from('profiles').select('id,name,bio,banned,avatar_url').in('id', authorIds),
-    sb.from('likes').select('post_id,user_id').in('post_id', ids),
+    sb.from('reactions').select('post_id,user_id,type').in('post_id', ids),
     sb.from('comments').select('id,post_id,text,created_at,author_id').in('post_id', ids).order('created_at', { ascending: true }),
     sharedIds.length ? sb.from('posts').select('*').in('id', sharedIds) : Promise.resolve({ data: [] }),
+    sb.from('posts').select('shared_from').in('shared_from', ids),
   ]);
-  const profs = profsR.data || [], likes = likesR.data || [],
-        comments = commentsR.data || [], shared = sharedR.data || [];
+  const profs = profsR.data || [], rxns = rxR.data || [],
+        comments = commentsR.data || [], shared = sharedR.data || [],
+        shareRows = sharesR.data || [];
   const pmap = Object.fromEntries(profs.map(p => [p.id, p]));
   const cAuthorIds = [...new Set(comments.map(c => c.author_id))];
   let cmap = {};
@@ -93,8 +95,10 @@ async function hydratePosts(posts) {
   return posts.map(p => ({
     ...p,
     author: pmap[p.author_id] || { name: '?', banned: false },
-    likeCount: likes.filter(l => l.post_id === p.id).length,
-    likedByMe: !!ME && likes.some(l => l.post_id === p.id && l.user_id === ME.id),
+    reactionCounts: (() => { const c = {}; rxns.filter(r => r.post_id === p.id).forEach(r => { c[r.type] = (c[r.type] || 0) + 1; }); return c; })(),
+    reactionTotal: rxns.filter(r => r.post_id === p.id).length,
+    myReaction: (() => { const r = rxns.find(r => r.post_id === p.id && ME && r.user_id === ME.id); return r ? r.type : null; })(),
+    shareCount: shareRows.filter(s => s.shared_from === p.id).length,
     comments: comments.filter(c => c.post_id === p.id)
       .map(c => ({ ...c, author: cmap[c.author_id] || { name: '?' } })),
     shared: p.shared_from ? (sharedMap[p.shared_from] || null) : null,
@@ -119,16 +123,18 @@ async function setPinned(id, pinned) {
   const { error } = await sb.from('posts').update({ pinned }).eq('id', id);
   if (error) throw error;
 }
-async function toggleLike(post) {
-  if (post.likedByMe) {
-    const { error } = await sb.from('likes').delete().eq('post_id', post.id).eq('user_id', ME.id);
-    if (error) throw error;
-  } else {
-    const { error } = await sb.from('likes').insert({ post_id: post.id, user_id: ME.id });
-    if (error) throw error;
-    if (post.author_id !== ME.id)
-      await notify(post.author_id, 'like', post.id, `${ME.name} liked your post.`);
-  }
+async function reactToPost(post, type) {
+  const isNew = !post.myReaction;
+  const { error } = await sb.from('reactions').upsert(
+    { post_id: post.id, user_id: ME.id, type },
+    { onConflict: 'post_id,user_id' });
+  if (error) throw error;
+  if (isNew && post.author_id !== ME.id)
+    await notify(post.author_id, 'like', post.id, `${ME.name} reacted to your post.`);
+}
+async function unreactToPost(post) {
+  const { error } = await sb.from('reactions').delete().eq('post_id', post.id).eq('user_id', ME.id);
+  if (error) throw error;
 }
 async function addComment(post, text) {
   const { data, error } = await sb.from('comments')
@@ -295,7 +301,7 @@ async function adminStats() {
     sb.from('profiles').select('*', { count: 'exact', head: true }),
     sb.from('posts').select('*', { count: 'exact', head: true }),
     sb.from('comments').select('*', { count: 'exact', head: true }),
-    sb.from('likes').select('*', { count: 'exact', head: true }),
+    sb.from('reactions').select('*', { count: 'exact', head: true }),
     sb.from('reports').select('*', { count: 'exact', head: true }).eq('status', 'open'),
   ]);
   return { users: u.count || 0, posts: p.count || 0, comments: c.count || 0, likes: l.count || 0, openReports: r.count || 0 };

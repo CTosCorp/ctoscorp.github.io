@@ -17,6 +17,23 @@ function toast(msg) {
   clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2400);
 }
 function closeModal() { const m = $('#modal'); if (m) m.remove(); }
+
+/* ---------------- Facebook-style reactions ---------------- */
+const RX = {
+  like:  { e: '\u{1F44D}', label: 'Like',  c: '#1877F2' },
+  love:  { e: '\u2764\uFE0F', label: 'Love',  c: '#F33E58' },
+  haha:  { e: '\u{1F602}', label: 'Haha',  c: '#F7B125' },
+  wow:   { e: '\u{1F62E}', label: 'Wow',   c: '#F7B125' },
+  sad:   { e: '\u{1F622}', label: 'Sad',   c: '#F7B125' },
+  angry: { e: '\u{1F621}', label: 'Angry', c: '#E9710F' },
+  care:  { e: '\u{1F970}', label: 'Care',  c: '#F7B125' },
+};
+function fmtCount(n) {
+  n = n || 0;
+  if (n >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(1).replace(/\.0$/, '') + 'K';
+  return '' + n;
+}
 /* Non-blocking confirm dialog (native confirm() hangs some browsers) */
 function confirmDialog(msg, okLabel) {
   return new Promise((resolve) => {
@@ -229,6 +246,7 @@ function openGroup(id) { S.view = 'group'; S.groupId = id; S.groupTab = 'discuss
 function openProfile(id) { S.view = 'profile'; S.profileId = id; PROFILE_TAB = 'posts'; renderApp(); window.scrollTo(0, 0); }
 
 async function renderView() {
+  closeRxPicker();
   const f = $('#feed');
   try {
     if (S.view === 'profile') f.innerHTML = await profileHTML(S.profileId);
@@ -280,7 +298,7 @@ function setupRealtime() {
   const reload = debounce(() => { if (S.view === 'home' || S.view === 'profile') refreshFeedSoon(); }, 400);
   rtChannels.push(onTable('posts', reload));
   rtChannels.push(onTable('comments', reload));
-  rtChannels.push(onTable('likes', reload));
+  rtChannels.push(onTable('reactions', reload));
   rtChannels.push(onTable('stories', debounce(() => { if (S.view === 'home') refreshStories(); }, 600)));
   rtChannels.push(onTable('profiles', debounce(() => loadRightBar(), 800)));
   rtChannels.push(sb.channel('rt-msg-badge')
@@ -510,13 +528,10 @@ function postHTML(p) {
     ${p.image_url ? `<img class="post-img" loading="lazy" src="${esc(p.image_url)}" onerror="this.style.display='none'">` : ''}
     ${p.video_url ? `<video class="post-video" controls preload="metadata" playsinline src="${esc(p.video_url)}"></video>` : ''}
     ${p.shared ? `<div class="shared-box">${sharedHTML(p.shared)}</div>` : ''}
-    <div class="post-counts">
-      <span><span class="like-badge">${icon('like', 14)}</span> <span class="like-count">${p.likeCount}</span></span>
-      <span class="right-counts">${comments.length} comments</span>
-    </div>
+    <div class="post-counts">${rxCountsHTML(p)}</div>
     <hr>
     <div class="post-actions">
-      <button class="${p.likedByMe ? 'liked' : ''}" onclick="toggleLikeUI('${p.id}')">${icon('like', 20)}<span>Like</span></button>
+      ${rxBtnHTML(p)}
       <button onclick="focusComment('${p.id}')">${icon('comment', 20)}<span>Comment</span></button>
       <button onclick="sharePostUI('${p.id}')">${icon('share', 20)}<span>Share</span></button>
     </div>
@@ -552,20 +567,106 @@ function commentHTML(c) {
 let POST_CACHE = {};
 function cachePosts(list) { list.forEach(p => { POST_CACHE[p.id] = p; }); }
 
-async function toggleLikeUI(pid) {
+/* ----- reaction picker (long-press) ----- */
+let rxTimer = null, rxPickerFor = null;
+function rxDown(ev, pid) {
+  if (rxPickerFor === pid) { closeRxPicker(); S._rxAte = pid; return; }
+  closeRxPicker();
+  const el = ev.currentTarget;
+  rxTimer = setTimeout(() => { rxTimer = null; openRxPicker(pid, el); }, 450);
+}
+function rxUp() { if (rxTimer) { clearTimeout(rxTimer); rxTimer = null; } }
+async function rxTap(ev, pid) {
+  ev.stopPropagation(); rxUp();
+  if (S._rxAte === pid) { S._rxAte = null; return; }
+  if (S._rxLong === pid) { S._rxLong = null; return; }
   const p = POST_CACHE[pid]; if (!p) return;
   try {
-    await toggleLike(p);
-    p.likedByMe = !p.likedByMe;
-    p.likeCount += p.likedByMe ? 1 : -1;
-    const card = $('#post_' + pid);
-    if (card) {
-      const btn = card.querySelector('.post-actions button');
-      if (btn) btn.classList.toggle('liked', p.likedByMe);
-      const cnt = card.querySelector('.like-count');
-      if (cnt) cnt.textContent = p.likeCount;
+    if (p.myReaction) { applyLocalRx(p, null); paintRx(pid); await unreactToPost(p); }
+    else { applyLocalRx(p, 'like'); paintRx(pid); await reactToPost(p, 'like'); }
+  } catch (e) { err(e); renderView(); }
+}
+function openRxPicker(pid, anchor) {
+  closeRxPicker();
+  S._rxLong = pid; rxPickerFor = pid;
+  const r = anchor.getBoundingClientRect();
+  const d = document.createElement('div');
+  d.id = 'rxPicker'; d.className = 'rx-picker';
+  d.innerHTML = Object.keys(RX).map((t, i) =>
+    `<button class="rx-opt" style="animation-delay:${i * 45}ms" title="${RX[t].label}" aria-label="${RX[t].label}"
+      onpointerdown="event.stopPropagation();event.preventDefault()"
+      onclick="pickRx(event,'${pid}','${t}')"><span>${RX[t].e}</span></button>`).join('');
+  document.body.appendChild(d);
+  const w = d.offsetWidth, h = d.offsetHeight;
+  d.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left + r.width / 2 - w / 2)) + 'px';
+  d.style.top = Math.max(8, r.top - h - 12) + 'px';
+}
+function closeRxPicker() {
+  const d = $('#rxPicker'); if (d) d.remove();
+  rxPickerFor = null;
+}
+async function pickRx(ev, pid, type) {
+  ev.stopPropagation(); ev.preventDefault();
+  const p = POST_CACHE[pid];
+  closeRxPicker(); S._rxLong = null; S._rxAte = null;
+  if (!p) return;
+  try {
+    applyLocalRx(p, type); paintRx(pid);
+    await reactToPost(p, type);
+  } catch (e) { err(e); renderView(); }
+}
+document.addEventListener('pointerdown', (e) => {
+  const d = $('#rxPicker');
+  if (d && !d.contains(e.target) && !e.target.closest('[data-rxbtn]')) closeRxPicker();
+}, true);
+window.addEventListener('scroll', () => { if (rxPickerFor) closeRxPicker(); }, { passive: true, capture: true });
+function applyLocalRx(p, nt) {
+  const ot = p.myReaction;
+  p.reactionCounts = p.reactionCounts || {};
+  p.reactionTotal = p.reactionTotal || 0;
+  if (ot && ot !== nt) {
+    p.reactionCounts[ot] = Math.max(0, (p.reactionCounts[ot] || 0) - 1);
+    p.reactionTotal = Math.max(0, p.reactionTotal - 1);
+    if (!p.reactionCounts[ot]) delete p.reactionCounts[ot];
+  }
+  if (nt && nt !== ot) {
+    p.reactionCounts[nt] = (p.reactionCounts[nt] || 0) + 1;
+    p.reactionTotal += 1;
+  }
+  p.myReaction = nt || null;
+}
+function rxCountsHTML(p) {
+  const c = p.reactionCounts || {};
+  const top = Object.keys(c).filter(t => c[t] > 0).sort((a, b) => c[b] - c[a]).slice(0, 3);
+  const left = top.length
+    ? `<span class="rx-top">${top.map(t => `<span>${RX[t].e}</span>`).join('')}</span><span>${fmtCount(p.reactionTotal)}</span>` : '';
+  const cc = (p.comments || []).length, sc = p.shareCount || 0;
+  const bits = [];
+  if (cc) bits.push(fmtCount(cc) + ' comment' + (cc > 1 ? 's' : ''));
+  if (sc) bits.push(fmtCount(sc) + ' share' + (sc > 1 ? 's' : ''));
+  return `${left}<span class="right-counts">${bits.join(' \u00b7 ')}</span>`;
+}
+function rxBtnHTML(p, compact) {
+  const r = p.myReaction ? RX[p.myReaction] : null;
+  const inner = r
+    ? `<span class="rx-e">${r.e}</span>${compact ? '' : `<span style="color:${r.c};font-weight:700">${r.label}</span>`}`
+    : `${icon('like', 20)}${compact ? '' : '<span>Like</span>'}`;
+  return `<button data-rxbtn class="${compact ? 'rx-compact ' : ''}${r ? 'rx-' + p.myReaction : ''}"
+    onpointerdown="rxDown(event,'${p.id}')" onpointerup="rxUp()" onpointerleave="rxUp()" onpointercancel="rxUp()"
+    onclick="rxTap(event,'${p.id}')">${inner}</button>`;
+}
+function paintRx(pid) {
+  const p = POST_CACHE[pid]; if (!p) return;
+  document.querySelectorAll('#post_' + pid).forEach(card => {
+    const btn = card.querySelector('[data-rxbtn]');
+    if (btn) {
+      const tmp = document.createElement('div');
+      tmp.innerHTML = rxBtnHTML(p, btn.classList.contains('rx-compact'));
+      btn.replaceWith(tmp.firstChild);
     }
-  } catch (e) { err(e); }
+    const cr = card.querySelector('.post-counts');
+    if (cr) cr.innerHTML = rxCountsHTML(p);
+  });
 }
 
 async function addCommentUI(pid) {
@@ -967,7 +1068,7 @@ async function watchHTML() {
         ${p.text ? `<div class="post-text">${esc(p.text)}</div>` : ''}
         <video class="watch-video" controls preload="metadata" playsinline src="${esc(p.video_url)}"></video>
         <div class="post-actions">
-          <button class="${p.likedByMe ? 'liked' : ''}" onclick="toggleLikeUI('${p.id}')">${icon('like', 20)}<span class="like-count">${p.likeCount || ''}</span></button>
+          ${rxBtnHTML(p, true)}
           <button onclick="focusComment('${p.id}')">${icon('comment', 20)}<span>${(p.comments || []).length || ''}</span></button>
           <button onclick="sharePostUI('${p.id}')">${icon('share', 20)}</button>
         </div>
@@ -1360,7 +1461,7 @@ async function profileTabHTML() {
 function applyPostFilter() {
   const v = $('#postFilter').value;
   const list = [...(S._profilePosts || [])];
-  if (v === 'top') list.sort((a, b) => b.likeCount - a.likeCount);
+  if (v === 'top') list.sort((a, b) => (b.reactionTotal || 0) - (a.reactionTotal || 0));
   else list.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
   cachePosts(list);
   $('#profilePosts').innerHTML = postsHTML(list);
