@@ -188,3 +188,11 @@ a { color: var(--blue); text-decoration: none; }
   .feed { max-width: 100%; }
   .layout { padding: 10px; }
 }
+
+/* ---------- realtime bits ---------- */
+.live-dot { color: #31A24C; font-size: 11px; font-weight: 800; letter-spacing: .5px; display: flex; align-items: center; gap: 4px; animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+.notif.unread { background: #E7F3FF; }
+body.dark .notif.unread { background: #1F3A5F; }
+.lbl { display: block; font-weight: 600; font-size: 14px; margin: 12px 0 6px; }
+#cp_file { margin-bottom: 4px; }
