@@ -5,6 +5,7 @@ const S = {
   view: 'home', profileId: null, query: '',
   dark: (() => { try { return localStorage.getItem('fbclone_dark') === '1'; } catch (e) { return false; } })(),
   openMenu: null, composerBg: '', followingCache: [],
+  _csort: {}, _cshow: {}, _cexp: {},
 };
 
 const $ = (sel, el) => (el || document).querySelector(sel);
