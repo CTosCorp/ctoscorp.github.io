@@ -80,6 +80,12 @@ const TABS = [
   ['reports', '🚩 Reports'], ['settings', '⚙️ Settings'],
 ];
 let openReportCount = 0;
+function qTimeoutTop(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms)),
+  ]);
+}
 function renderPanel() {
   teardownRealtime();
   document.title = 'Admin — FaceClone';
@@ -105,7 +111,7 @@ function renderPanel() {
 async function goTab(id) {
   TAB = id;
   teardownRealtime();
-  const stats = await adminStats().catch(() => ({ openReports: 0 }));
+  const stats = await qTimeoutTop(adminStats(), 15000).catch(() => ({ openReports: 0 }));
   openReportCount = stats.openReports || 0;
   $('#a_nav').innerHTML = TABS.map(([tid, label]) =>
     `<button class="a-nav ${TAB === tid ? 'active' : ''}" onclick="goTab('${tid}')">${label}
@@ -127,19 +133,33 @@ async function renderTab(soft) {
     else if (TAB === 'posts') c.innerHTML = await postsHTML();
     else if (TAB === 'reports') c.innerHTML = await reportsHTML();
     else if (TAB === 'settings') c.innerHTML = await settingsHTML();
-    if (TAB === 'dashboard') drawChart(await adminPostsPerDay());
-  } catch (e) { if (!soft) err(e); }
+    if (TAB === 'dashboard') {
+      try { drawChart(await qTimeoutTop(adminPostsPerDay(), 15000)); }
+      catch (e) { console.error('chart failed:', e); }
+    }
+  } catch (e) {
+    console.error(e);
+    if (!soft) {
+      c.innerHTML = `<div class="a-card"><h3>Couldn't load this tab</h3>
+        <p class="muted">${esc(e.message || 'Unknown error')}</p>
+        <button class="btn-primary" onclick="renderTab()">Retry</button></div>`;
+    }
+  }
 }
 
 /* ---------------- Dashboard ---------------- */
 async function dashHTML() {
-  const s = await adminStats();
+  let s = { users: 0, posts: 0, comments: 0, likes: 0, openReports: 0 };
+  try { s = await qTimeoutTop(adminStats(), 15000); }
+  catch (e) { console.error('adminStats failed:', e); }
   const stats = [
     ['👥', s.users, 'Total users'], ['📰', s.posts, 'Total posts'],
     ['💬', s.comments, 'Comments'], ['👍', s.likes, 'Likes'],
     ['🚩', s.openReports, 'Open reports'],
   ];
-  const recent = await adminGetPosts().then(p => p.slice(0, 5)).catch(() => []);
+  let recent = [];
+  try { recent = (await qTimeoutTop(adminGetPosts(), 15000)).slice(0, 5); }
+  catch (e) { console.error('adminGetPosts failed:', e); }
   return `
   <div class="stat-grid">${stats.map(([ico, n, label]) =>
     `<div class="stat"><div class="stat-ico">${ico}</div><div class="stat-n">${n}</div><div class="stat-l">${label}</div></div>`).join('')}
